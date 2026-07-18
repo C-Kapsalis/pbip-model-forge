@@ -1,0 +1,72 @@
+/// Central date dimension. Self-contained calculated table so it always
+/// populates without an external source.
+table __Calendar
+	lineageTag: 8956d3d2-6c5f-442a-ab73-ff09a9042994
+	dataCategory: Time
+
+	column Date
+		dataType: dateTime
+		isKey
+		formatString: Long Date
+		lineageTag: 3ad8901e-1f31-42bf-9f49-62550f76bb5b
+		summarizeBy: none
+		sourceColumn: [Date]
+
+	column 'Calendar Year'
+		dataType: int64
+		formatString: 0
+		lineageTag: c0721d0b-309f-44f2-85d7-0a3f95e861fc
+		summarizeBy: none
+		sourceColumn: [Calendar Year]
+
+	column 'Calendar Month'
+		dataType: int64
+		isHidden
+		formatString: 0
+		lineageTag: 33a76e5e-ea6b-4a28-a6da-6388bff705bc
+		summarizeBy: none
+		sourceColumn: [Calendar Month]
+
+	column 'Calendar Month Name'
+		dataType: string
+		lineageTag: e36ae433-cf81-4fd3-ae01-ffe9c39467f9
+		summarizeBy: none
+		sourceColumn: [Calendar Month Name]
+		sortByColumn: 'Calendar Month'
+
+	column 'Calendar Quarter'
+		dataType: int64
+		formatString: 0
+		lineageTag: f1925a5f-ce71-4a5f-a6d7-31a8d0988653
+		summarizeBy: none
+		sourceColumn: [Calendar Quarter]
+
+	hierarchy 'Date Hierarchy'
+		lineageTag: 5b0a3fbb-1338-4b46-9c34-c19d0c442804
+
+		level 'Calendar Year'
+			lineageTag: f0864d49-4eeb-4df6-8a14-d7f4e575a15c
+			column: 'Calendar Year'
+
+		level 'Calendar Quarter'
+			lineageTag: f429b897-1b94-4ff6-aecc-886ed56e38f2
+			column: 'Calendar Quarter'
+
+		level 'Calendar Month'
+			lineageTag: 81483d0f-f03a-450b-b37f-48a63ea2a06b
+			column: 'Calendar Month'
+
+		level Date
+			lineageTag: 860c6d1b-e1e2-467e-bce3-bc60b1212d28
+			column: Date
+
+	partition __Calendar = calculated
+		mode: import
+		source =
+				ADDCOLUMNS (
+				    CALENDAR ( DATE ( 2024, 1, 1 ), DATE ( 2025, 12, 31 ) ),
+				    "Calendar Year", YEAR ( [Date] ),
+				    "Calendar Month", MONTH ( [Date] ),
+				    "Calendar Month Name", FORMAT ( [Date], "MMMM" ),
+				    "Calendar Quarter", QUARTER ( [Date] )
+				)

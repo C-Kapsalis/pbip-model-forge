@@ -1,0 +1,42 @@
+/// Product catalog.
+table Products
+	lineageTag: 855a826d-27da-4d9b-81c8-f057c9a0fe17
+
+	column product_id
+		dataType: int64
+		isKey
+		lineageTag: 798bb0b5-d68b-4bc6-8128-49fcdc33b32a
+		summarizeBy: none
+		sourceColumn: product_id
+
+	column product_name
+		dataType: string
+		lineageTag: 70da7feb-7c90-4066-a5aa-1450a591689b
+		summarizeBy: none
+		sourceColumn: product_name
+
+	column category
+		dataType: string
+		lineageTag: 457703b9-618a-4307-be25-f8f3917dc846
+		summarizeBy: none
+		sourceColumn: category
+
+	column unit_price
+		dataType: double
+		formatString: $ #,0.00
+		lineageTag: 336cab2d-dc77-47c4-b830-5a2d16d9f040
+		summarizeBy: none
+		sourceColumn: unit_price
+
+	partition Products = m
+		mode: import
+		source =
+				let
+				    Source = Table.FromRows(Json.Document(Binary.Decompress(Binary.FromText("i45WMlTSUQouScxLSSxKUQjIScwD8UuTipOLMgtKMvPzioF8E0s9A6VYnWglIyAnoCgflzpDuEJjIM8/LykfaGhmXrpCQGJyNkh9alFZZnIqSKmpgQFUqQnYoIKC/KISBceUFN38PFSVlmCFsQA=", BinaryEncoding.Base64), Compression.Deflate)), let _t = ((type nullable text) meta [Serialized.Text = true]) in type table [#"product_id" = _t, #"product_name" = _t, #"category" = _t, #"unit_price" = _t]),
+				    #"Changed Type" = Table.TransformColumnTypes(Source, {{"product_id", Int64.Type}, {"product_name", type text}, {"category", type text}, {"unit_price", type number}})
+				in
+				    #"Changed Type"
+
+	annotation PBI_NavigationStepName = Navigation
+
+	annotation PBI_ResultType = Table
