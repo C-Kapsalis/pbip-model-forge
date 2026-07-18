@@ -1,0 +1,41 @@
+/// One row per customer.
+table Customers
+	lineageTag: 82e8660a-a79d-4ee0-b1ef-b86210ac362a
+
+	column customer_id
+		dataType: int64
+		isKey
+		lineageTag: cc877a45-7e7a-4119-b0dc-4fbf24ca297e
+		summarizeBy: none
+		sourceColumn: customer_id
+
+	column customer_name
+		dataType: string
+		lineageTag: 84f47a56-81ce-48b7-aac6-c1aa2ed67702
+		summarizeBy: none
+		sourceColumn: customer_name
+
+	column segment
+		dataType: string
+		lineageTag: 08944eb3-b393-4e09-bbd1-3f8cb87e2e29
+		summarizeBy: none
+		sourceColumn: segment
+
+	column country
+		dataType: string
+		lineageTag: 8687a2cd-30f3-4390-83bd-660add9d61cb
+		summarizeBy: none
+		sourceColumn: country
+
+	partition Customers = m
+		mode: import
+		source =
+				let
+				    Source = Table.FromRows(Json.Document(Binary.Decompress(Binary.FromText("hc67DsIwDIXhV4kyl4HbA9BykyALFVPUwVWsNmqaIMcg8fa4HWBk/I8+ybZWL3Whd09KBOoKbZY6REZ6kM8ocY+e0amagTHrprB6JWtJvutZ3ZDBB+nalD978bFzaZzxWuYqtRBYHVNy+WtPSCPE94w20nsMDOqMIvv/P2wn8kLqCDGqKkka7xYGaECeTkIEB7ppPg==", BinaryEncoding.Base64), Compression.Deflate)), let _t = ((type nullable text) meta [Serialized.Text = true]) in type table [#"customer_id" = _t, #"customer_name" = _t, #"segment" = _t, #"country" = _t]),
+				    #"Changed Type" = Table.TransformColumnTypes(Source, {{"customer_id", Int64.Type}, {"customer_name", type text}, {"segment", type text}, {"country", type text}})
+				in
+				    #"Changed Type"
+
+	annotation PBI_NavigationStepName = Navigation
+
+	annotation PBI_ResultType = Table

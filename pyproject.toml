@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pbip-model-forge"
+version = "0.1.0"
+description = "Generate openable Power BI PBIP semantic models (with data loaded) from plain-dict specs, validated with tmdl-preflight."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "Maya Insights" }]
+keywords = ["powerbi", "pbip", "tmdl", "semantic-model", "data-modeling"]
+
+# NOTE: the standard-library modules json/zlib/base64/uuid are all this package
+# needs at runtime -- there are no pip dependencies to build a model.
+dependencies = []
+
+[project.optional-dependencies]
+# tmdl-preflight is a REQUIRED companion tool for validation, but it is NOT on
+# PyPI: it is the user's own local package, installed separately from
+#   C:\Users\<you>\Desktop\tmdl-preflight
+# (e.g. `pip install -e path\to\tmdl-preflight`). The build pipeline shells out
+# to the `tmdl-preflight` console command; see README "Requirements".
+dev = ["pytest>=7"]
+
+[project.scripts]
+# Convenience CLI: `pbip-forge-template` rebuilds the seed template.
+pbip-forge-template = "pbip_model_forge.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

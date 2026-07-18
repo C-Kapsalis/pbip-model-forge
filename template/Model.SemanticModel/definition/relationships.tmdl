@@ -1,0 +1,16 @@
+relationship 6c6ecf1a-e82d-43f4-bc97-e367ab9baf4c
+	fromColumn: Sales.product_id
+	toColumn: Products.product_id
+
+relationship 367d31e7-744b-43a3-b923-a9a773f976ef
+	fromColumn: Sales.customer_id
+	toColumn: Customers.customer_id
+
+relationship 268c0204-39a6-4c9c-89dd-8d4918e3ad7a
+	fromColumn: Sales.order_date
+	toColumn: __Calendar.Date
+
+relationship 082cc6ac-f542-4d8e-80c0-9375dc670968
+	isActive: false
+	fromColumn: Sales.ship_date
+	toColumn: __Calendar.Date

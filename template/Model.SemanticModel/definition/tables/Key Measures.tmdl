@@ -1,0 +1,33 @@
+/// Measure home table: all user-facing measures live here.
+table 'Key Measures'
+	lineageTag: 20c35b40-271d-4bb6-8643-2a81f58ea5e7
+
+	/// Total net revenue.
+	measure Revenue = SUM(Sales[net_amount])
+		formatString: $ #,0.00
+		lineageTag: 9d482b93-6fbf-49b3-8cc4-ff2efb5d76f4
+
+	measure 'Orders #' = DISTINCTCOUNT(Sales[order_id])
+		formatString: #,0
+		lineageTag: 0d4aec1f-bd87-4ac1-9f77-2dc815593dd6
+
+	measure 'Units Sold' = SUM(Sales[quantity])
+		formatString: #,0
+		lineageTag: a642e43a-02af-43f6-807c-8d031af0f26e
+
+	measure 'Average Order Value' = DIVIDE([Revenue], [Orders #])
+		formatString: $ #,0.00
+		lineageTag: 3c3fabd1-0ca5-4459-a886-2017d3a3267d
+
+	partition 'Key Measures' = m
+		mode: import
+		source =
+				let
+				    Source = Table.FromRows(Json.Document(Binary.Decompress(Binary.FromText("i45WUlCKjQUA", BinaryEncoding.Base64), Compression.Deflate)), let _t = ((type nullable text) meta [Serialized.Text = true]) in type table [z = _t]),
+				    #"Removed Columns" = Table.RemoveColumns(Source,{"z"})
+				in
+				    #"Removed Columns"
+
+	annotation PBI_NavigationStepName = Navigation
+
+	annotation PBI_ResultType = Table

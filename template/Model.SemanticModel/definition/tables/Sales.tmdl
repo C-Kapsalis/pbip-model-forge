@@ -1,0 +1,68 @@
+/// One row per order line. Core fact table.
+table Sales
+	isHidden
+	lineageTag: f61821f8-5646-45a5-b489-fd3b7ca832d8
+
+	column order_id
+		dataType: int64
+		isHidden
+		lineageTag: 89040923-c680-46e0-a6c0-44f50806ffe5
+		summarizeBy: none
+		sourceColumn: order_id
+
+	column order_date
+		dataType: dateTime
+		isHidden
+		formatString: General Date
+		lineageTag: 30711fd0-244e-463d-a1ff-73f7d09259f8
+		summarizeBy: none
+		sourceColumn: order_date
+
+	column ship_date
+		dataType: dateTime
+		isHidden
+		formatString: General Date
+		lineageTag: d5e7f87e-843d-4b2a-9a0a-a04e6883b363
+		summarizeBy: none
+		sourceColumn: ship_date
+
+	column customer_id
+		dataType: int64
+		isHidden
+		lineageTag: 6bf8e53b-82a5-4d9d-b653-d4daa5b91a8b
+		summarizeBy: none
+		sourceColumn: customer_id
+
+	column product_id
+		dataType: int64
+		isHidden
+		lineageTag: a7638889-b72f-40dd-989f-91289927d3ef
+		summarizeBy: none
+		sourceColumn: product_id
+
+	column quantity
+		dataType: int64
+		isHidden
+		lineageTag: 3fc6e378-9740-4d5b-ba91-402b5fecae82
+		summarizeBy: sum
+		sourceColumn: quantity
+
+	column net_amount
+		dataType: double
+		isHidden
+		lineageTag: f781e954-92da-43e6-8441-93c456f7acb2
+		summarizeBy: sum
+		sourceColumn: net_amount
+
+	partition Sales = m
+		mode: import
+		source =
+				let
+				    Source = Table.FromRows(Json.Document(Binary.Decompress(Binary.FromText("XZBBDgQhCAT/4nnYNKAyvmUy///GqqtC9sChYlcaeZ7EAKcrCSQTmLhEsA7ztY/2ydk+SO81NTlJIWiEupShMobX4J5HlYQj7BpdbkHQ8klWQgvAQ8urcqxvubjm/2mk2MAg7A2Heg9NQlv9Jcs8A0fQ1bJVbtU1O8leWCLYWvBMu127T9KII8hu+TvJ+wU=", BinaryEncoding.Base64), Compression.Deflate)), let _t = ((type nullable text) meta [Serialized.Text = true]) in type table [#"order_id" = _t, #"order_date" = _t, #"ship_date" = _t, #"customer_id" = _t, #"product_id" = _t, #"quantity" = _t, #"net_amount" = _t]),
+				    #"Changed Type" = Table.TransformColumnTypes(Source, {{"order_id", Int64.Type}, {"order_date", type datetime}, {"ship_date", type datetime}, {"customer_id", Int64.Type}, {"product_id", Int64.Type}, {"quantity", Int64.Type}, {"net_amount", type number}})
+				in
+				    #"Changed Type"
+
+	annotation PBI_NavigationStepName = Navigation
+
+	annotation PBI_ResultType = Table
