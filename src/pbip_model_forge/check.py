@@ -280,7 +280,10 @@ def _split_args(inner: str) -> list[str]:
     return [a.strip() for a in args]
 
 
-def _mentions_table(text: str, table: str) -> bool:
+def mentions_table(text: str, table: str) -> bool:
+    """True if ``text`` (already comment/string-stripped) names ``table``.
+    Bracket contents are ignored, so ``[Visits #]`` does not mention Visits."""
+    text = re.sub(r"\[[^\]]*\]", "[]", text)
     if re.search(r"'" + re.escape(table.replace("'", "''")) + r"'", text):
         return True
     if _is_simple_ident(table):
@@ -299,7 +302,7 @@ def reads_table(expr: str, table: str) -> bool:
     for s, e, _ in _call_spans(text, _SENSOR_CALL):
         for k in range(s, e):
             chars[k] = " "
-    return _mentions_table("".join(chars), table)
+    return mentions_table("".join(chars), table)
 
 
 # ---------------------------------------------------------------------------

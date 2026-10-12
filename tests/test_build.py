@@ -194,7 +194,8 @@ def test_handoff_manifest(tmp_path):
                      "__Calendar": "calendar", "Key Measures": "measures"}
     assert roles == infer_roles(spec)
     avg = next(m for m in manifest["measures"] if m["name"] == "Avg Sales per Store")
-    assert avg["dependsOn"]["measures"] == ["Stores #", "Total Sales"]
+    assert avg["dependsOn"] == {"measures": ["Stores #", "Total Sales"],
+                                "columns": [], "tables": []}
     share = next(m for m in manifest["measures"] if m["name"] == "Bike Share %")
     assert "Products[product_name]" in share["dependsOn"]["columns"]
     names = [t["name"] for t in manifest["tables"]]

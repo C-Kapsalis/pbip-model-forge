@@ -267,6 +267,12 @@ def test_dax_references_shapes():
     assert refs["tables"] == ["Other"]
 
 
+def test_measure_names_are_not_table_mentions():
+    assert not reads_table("DIVIDE([Total], [Sales #])", "Sales")
+    assert not reads_table("[Sales Base]", "Sales")
+    assert reads_table("COUNTROWS(Sales)", "Sales")
+
+
 def test_reads_table_ignores_sensors():
     assert not reads_table("IF(ISINSCOPE(Sales[x]), 1)", "Sales")
     assert reads_table("IF(ISINSCOPE(Sales[x]), SUM(Sales[y]))", "Sales")

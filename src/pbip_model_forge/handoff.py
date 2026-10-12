@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import Any
 
 from . import model_info as mi
-from .check import dax_references, strip_dax
+from .check import dax_references, mentions_table, strip_dax
 from .enter_data import resolve_type
 
 
@@ -45,9 +45,7 @@ def _measure_dependencies(m: dict[str, Any], spec: dict[str, Any]) -> dict[str, 
             measures.add(member)
     text = strip_dax(m.get("expression", ""))
     for t in data_tables:
-        if re.search(r"'" + re.escape(t) + r"'", text) or (
-                re.match(r"^[A-Za-z_]\w*$", t)
-                and re.search(r"(?<![\w'])" + re.escape(t) + r"(?![\w'])", text)):
+        if mentions_table(text, t):
             tables.add(t)
     return {"measures": sorted(measures), "columns": sorted(columns),
             "tables": sorted(tables)}

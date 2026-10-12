@@ -41,7 +41,7 @@ line.
   inferred from the fact date columns when the spec omits it.
 - Spec keys: table `role`, measure `displayFolder`, `helper` and `hidden`,
   column `isAvailableInMdx`, relationship `crossFilter`.
-- Tests: `tests/test_build.py` and `tests/test_check.py` (58 tests in all).
+- Tests: `tests/test_build.py` and `tests/test_check.py` (59 tests in all).
 
 ### Changed
 
