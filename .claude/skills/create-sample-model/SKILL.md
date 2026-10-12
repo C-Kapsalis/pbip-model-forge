@@ -5,33 +5,33 @@ description: >-
   business domain. Use when the user says things like "create a sample data model
   for <domain>", "prototype a semantic model for <X>", "mock up a star schema for
   <X>", or "generate a PBIP with sample data". Invents realistic tables/columns/
-  rows, emits an openable PBIP with the data physically loaded, validates it with
-  tmdl-preflight, and can iteratively expand it (relationships, measures,
-  dimensions) while staying valid. The end product is a data-model spec a user
-  can hand to data engineers.
+  rows, emits an openable PBIP with the data physically loaded, gates it with
+  pbip-forge check and tmdl-preflight, and can iteratively expand it
+  (relationships, measures, dimensions) while staying valid. The end product is
+  a data-model spec a user can hand to data engineers.
 ---
 
 # create-sample-model
 
 Turn a one-line request ("create a sample data model for a hospital", "…for
 subscription analytics", "…for a logistics company") into a **real, openable
-PBIP**, a Power BI semantic model with plausible sample data physically loaded,
-plus a blank report, then validate and iterate on it. The deliverable is a
-**spec**: a diagram-style summary of the model plus the PBIP files that a data
-engineer can open in Power BI Desktop and use as a blueprint.
+PBIP**: a Power BI semantic model with plausible sample data physically
+loaded, plus a blank report. Then validate and iterate on it. The deliverable
+is a **spec**: the generated `handoff/SPEC.md` (data dictionary and diagram)
+plus the PBIP files a data engineer can open in Power BI Desktop and use as a
+blueprint.
 
 ## Requirements (check once, up front)
 
-This skill drives two things that must be present:
-
 1. **This repo's builder**, `pbip_model_forge` under `src/`. No pip deps.
-2. **`tmdl-preflight`**, the user's validation tool, installed separately (its
-   console command `tmdl-preflight` must be on PATH). This is the **gate**: a
-   model is only "done" when `tmdl-preflight check` reports 0 errors. If the
-   command is missing, tell the user to install it (see the repo README); do
-   not claim a model opens without it passing.
+   `pip install -e .` adds the `pbip-forge` command; without installing, use
+   `PYTHONPATH=src python -m pbip_model_forge` in its place.
+2. **`tmdl-preflight`**, the validation tool, installed separately
+   (`pip install git+https://github.com/C-Kapsalis/tmdl-preflight.git`). Its
+   console command must be on PATH. If it is missing, tell the user to install
+   it; do not claim a model opens without it passing.
 
-Verify with: `tmdl-preflight --version`.
+Verify with: `pbip-forge --version` and `tmdl-preflight --version`.
 
 ## The golden rule
 
@@ -40,87 +40,119 @@ Verify with: `tmdl-preflight --version`.
 every item of the will-it-open playbook (full artifact set, `ref table` for
 every table, a partition on every table including the dummy measures partition,
 compressed entered-data instead of inline `#table`, the required annotations, a
-self-contained calculated calendar, typed relationships). Your job is to invent
-a good *spec*; the builder guarantees it is structurally openable.
+self-contained calculated calendar, typed relationships, deterministic IDs).
+Your job is to invent a good *spec*; the two gates prove it.
+
+## The two gates
+
+A model is done only when both pass, in this order:
+
+1. `pbip-forge check <spec file> --profile handoff` reports **0 P0 and 0 P1**.
+   This judges the spec itself: keys, foreign keys, relationships, DAX
+   references, measure grain, formats and descriptions (rules FM001-FM022;
+   `pbip-forge rules` lists them with their fixes).
+2. `tmdl-preflight check out/<Domain>` reports **0 errors**. This proves the
+   generated files are structurally openable.
 
 ## Workflow
 
-### 1. Interpret the domain and design a star schema
+### 1. Design a star schema
 From the user's domain, invent:
-- **1 fact table** (hidden) that sets the grain (one row per order / visit / shipment /
-  event). Include foreign-key columns (`int64`), 1-2 date columns
-  (`datetime`), and 1-2 additive measures columns (`double`/`int64`,
+- **1 fact table** (hidden) that sets the grain (one row per order / visit /
+  shipment / event). Include foreign-key columns (`int64`), 1-2 date columns
+  (`datetime`), and 1-2 additive value columns (`double`/`int64`,
   `summarizeBy: sum`).
-- **2-4 dimension tables**, each with an `int64` key column (`key: True`) and a
-  few descriptive `string`/`double` attributes.
-- Generate **realistic sample rows** (roughly 4-8 dimension rows, 8-20 fact
-  rows). Use real-sounding names, sensible categories, dates spread across the
-  calendar range, and amounts that reconcile with quantity × price where it
-  makes sense.
+- **2-4 dimension tables**, each with exactly one `int64` key column
+  (`key: True`) and a few descriptive `string`/`double` attributes.
+- **Name every foreign key exactly like the key it points to**
+  (`Visits.patient_id -> Patients.patient_id`, never `-> Patients.id`).
+- **No null or dangling foreign keys.** If a fact row has no real match, add an
+  "Unknown" member to the dimension (for example key `-1`, name `Unknown`) and
+  point the row at it.
+- **Realistic sample rows** (roughly 4-8 dimension rows, 8-20 fact rows): real-
+  sounding names, sensible categories, dates spread across one or two years,
+  amounts that reconcile with quantity × price where it makes sense.
+- **A one-line `description`** on every table and every user-facing column
+  (state the grain on the fact: "One row per clinic visit.").
+
+The builder hides key columns, relationship `from` columns and raw numeric
+fact columns for you; do not hand-set `hidden` unless you mean to override.
 
 ### 2. Add a calendar, a measures table, and relationships
-- `calendar`: `{"name": "__Calendar", "start_year": <min year in data>,
-  "end_year": <max year>}`. The builder makes it a self-contained calculated
-  table with a date hierarchy and `dataCategory: Time`.
-- `measures_table`: a measures-home table with 3-6 DAX measures (Revenue,
-  Count, averages, ratios) each with a `format`. Measures reference the fact
-  table. **Never name it `Measures`**; that name is reserved in Power BI and
-  Desktop refuses to open the model (*"Unsupported Table name"*). Use
-  `Key Measures` or a domain name like `Sales Measures` / `Clinic Measures`.
-  (The builder also guards this and will raise if a reserved name slips in.)
+- `calendar`: `{"name": "__Calendar"}`. The builder infers the year range from
+  the fact dates (or pass `start_year`/`end_year`) and generates Year, Quarter,
+  Month, Month Start, Year-Month, Week Start and Day of Week columns plus a date
+  hierarchy.
+- `measures_table`: a measures-home table with 3-8 DAX measures, each with a
+  `format` and a one-line `description`. **Never name it `Measures`**; that
+  name is reserved in Power BI and Desktop refuses to open the model. Use
+  `Key Measures` or a domain name like `Clinic Measures`.
 - `relationships`: one per foreign key from the fact into each dimension, plus
-  `Fact.<primary date> -> __Calendar.Date` (active) and any secondary date
-  (e.g. ship date) as `"active": False`. **Both endpoint columns must exist and
-  share the same declared type**: fact FK `int64` to dim key `int64`, date
-  `datetime` to `__Calendar.Date` (`dateTime`).
+  `Fact.<primary date> -> __Calendar.Date` (active) and any secondary date as
+  `"active": False`. Endpoints must share the same declared type.
 
-### 3. Build
-```python
-import sys; sys.path.insert(0, "src")
-from pbip_model_forge.build_model import build_pbip
-spec = { ... }                       # the dict you designed
-build_pbip(spec, "out/<Domain>")     # writes <name>.pbip + .SemanticModel + blank .Report
-```
-See `scripts/build_template.py` for a complete, working spec to copy from, and
-the entered-data encoding guide in `pbip-model-forge-documentation` for how
-the data is encoded.
+**Measure naming convention** (the check enforces the format half):
 
-### 4. Validate (the gate)
-```
-tmdl-preflight check out/<Domain>
-```
-Must be **0 errors**. If not, read each violation (they name the file, line, and
-rule id M0xx), fix the spec, rebuild, re-check. Common fixes:
-- **M006** (table not in model.tmdl): only happens if you bypass the builder.
-  Don't; rebuild through `build_pbip`.
-- **M005** (bad dataType): a column `type` you used isn't supported; use one of
-  int64/string/double/decimal/datetime/boolean.
-- Relationship errors: an endpoint column name is misspelled or the two
-  endpoints have different declared types.
+| Pattern | Use for | Example | Format |
+|---|---|---|---|
+| `X #` | counts | `Visits #`, `Patients #` | `#,0` |
+| `X %` | shares and rates | `No-Show %` | `0.0%` |
+| `Avg X` | averages | `Avg Length of Stay` | `#,0.0` or currency |
+| `Total X` | additive sums | `Total Revenue` | `$ #,0.00` or `#,0` |
+| `X per Y` | ratios of two measures | `Avg Billed per Patient` | as the numerator |
 
-### 5. Present the spec (the deliverable)
+**Count entities from the fact's foreign key, never from the dimension.**
+`Patients # = DISTINCTCOUNT(Visits[patient_id])`, not
+`DISTINCTCOUNT(Patients[patient_id])`. The other dimensions filter the fact,
+not the Patients table, so a dimension-side count ignores them and every
+"per patient" ratio comes out wrong when sliced (rule FM015 catches this).
+Build ratios with `DIVIDE([Numerator], [Denominator])`. Mark internal building
+blocks `"helper": True` (hidden, `_Helpers` folder).
+
+### 3. Write the spec, gate it, build it
+Save the spec dict as a module-level `SPEC` in a Python file (copy the shape of
+`scripts/build_hospital.py`, which is a complete worked example), then:
+
+```
+pbip-forge check out/<domain>_spec.py --profile handoff   # 0 P0, 0 P1
+pbip-forge build out/<domain>_spec.py out/<Domain> --check --profile handoff
+tmdl-preflight check out/<Domain>                         # 0 errors
+```
+
+Fix every P0/P1 in the spec and re-run; each violation names the object and the
+fix. Common ones:
+- **FM005** orphan or null FK: add the "Unknown" member described above.
+- **FM007** FK/PK names differ: rename one side.
+- **FM013** unresolved DAX reference: a typo in a table, column or measure name.
+- **FM015** ratio grain: count from the fact's FK.
+- **FM017** description missing, under 10 characters, or a placeholder.
+- tmdl-preflight **M005** bad dataType: use int64/string/double/decimal/
+  datetime/boolean. **M006/M007** only happen if you bypass the builder; don't.
+
+### 4. Present the spec (the deliverable)
 Give the user:
-- A **diagram-style summary** of the model: each table with its columns and
-  types, the measures, and the relationships drawn as `Fact.fk -> Dim.key`
-  (a Mermaid `erDiagram` reads well). This is what they hand to data engineers.
+- The generated **`out/<Domain>/handoff/SPEC.md`**: show its Mermaid
+  `erDiagram` and summarize its data dictionary. Do not hand-write a separate
+  diagram; the generated one always matches the model.
 - The **path to the PBIP** and a one-line "open `<name>.pbip` in Power BI
-  Desktop" note.
-- The **tmdl-preflight result** (0 errors) as proof it is structurally openable.
+  Desktop" note. `handoff/manifest.json` is the machine-readable version for a
+  data-engineering tool.
+- **Both gate results**: `pbip-forge check` (0 P0, 0 P1, any P2 advisories
+  listed) and `tmdl-preflight` (0 errors).
 
 Do NOT fabricate an "it opens in Power BI" claim beyond what tmdl-preflight
 verifies; a real Desktop open-test is a human step.
 
 ## Iterating / expanding (staying valid)
 When the user asks to expand ("add a promotions dimension", "add a margin
-measure", "make it monthly"), edit the spec dict, add the new
-tables/columns/measures/relationships, **rebuild through `build_pbip`, and
-re-run `tmdl-preflight check`**. Never edit the generated TMDL by hand; always
-regenerate from the spec so the invariants hold. Keep the spec as the source of
-truth across turns. The companion skill `validate-and-expand` documents this
-keep-it-valid loop in more detail.
+measure"), edit the spec, rebuild through `build_pbip`, and re-run both gates.
+Never edit the generated TMDL by hand; always regenerate from the spec so the
+invariants hold. Keep the spec file as the source of truth across turns. The
+companion skill `validate-and-expand` documents this loop in more detail.
 
 ## What good output looks like
 - A star schema with 1 fact + 2-4 dims + calendar + measures table.
-- Sample data that looks like it came from the real domain.
-- `tmdl-preflight check` → 0 errors.
-- A clear diagram summary + the PBIP path.
+- Sample data that looks like it came from the real domain, with no orphan keys.
+- Measures named by the convention, counted from the fact, all described.
+- `pbip-forge check --profile handoff` → 0 P0/P1; `tmdl-preflight check` → 0 errors.
+- The generated SPEC.md + the PBIP path.
