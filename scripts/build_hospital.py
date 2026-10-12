@@ -28,9 +28,12 @@ SPEC = {
             "description": "One row per patient.",
             "columns": [
                 {"name": "patient_id", "type": "int64", "key": True},
-                {"name": "patient_name", "type": "string"},
-                {"name": "gender", "type": "string"},
-                {"name": "age", "type": "int64"},
+                {"name": "patient_name", "type": "string",
+                 "description": "Patient's full name."},
+                {"name": "gender", "type": "string",
+                 "description": "Patient's recorded gender."},
+                {"name": "age", "type": "int64",
+                 "description": "Patient's age in years at registration."},
                 {"name": "insurance_company_id", "type": "int64"},
             ],
             "rows": [
@@ -46,10 +49,13 @@ SPEC = {
             "name": "InsuranceCompanies",
             "description": "Insurance payer directory.",
             "columns": [
-                {"name": "company_id", "type": "int64", "key": True},
-                {"name": "company_name", "type": "string"},
-                {"name": "plan_type", "type": "string"},
-                {"name": "network_type", "type": "string"},
+                {"name": "insurance_company_id", "type": "int64", "key": True},
+                {"name": "company_name", "type": "string",
+                 "description": "Insurance company name."},
+                {"name": "plan_type", "type": "string",
+                 "description": "Plan type: PPO, HMO or Government."},
+                {"name": "network_type", "type": "string",
+                 "description": "Network coverage: In-Network or National."},
             ],
             "rows": [
                 [1, "Blue Cross Blue Shield", "PPO", "In-Network"],
@@ -64,8 +70,10 @@ SPEC = {
             "description": "Attending physician directory.",
             "columns": [
                 {"name": "physician_id", "type": "int64", "key": True},
-                {"name": "physician_name", "type": "string"},
-                {"name": "specialty", "type": "string"},
+                {"name": "physician_name", "type": "string",
+                 "description": "Attending physician's name."},
+                {"name": "specialty", "type": "string",
+                 "description": "Physician's medical specialty."},
             ],
             "rows": [
                 [1, "Dr. Sarah Bennett", "Cardiology"],
@@ -80,8 +88,10 @@ SPEC = {
             "description": "Hospital department / ward directory.",
             "columns": [
                 {"name": "department_id", "type": "int64", "key": True},
-                {"name": "department_name", "type": "string"},
-                {"name": "floor", "type": "string"},
+                {"name": "department_name", "type": "string",
+                 "description": "Department or ward name."},
+                {"name": "floor", "type": "string",
+                 "description": "Floor the department is on."},
             ],
             "rows": [
                 [1, "Cardiology", "Floor 3"],
@@ -96,9 +106,12 @@ SPEC = {
             "description": "Diagnosis code reference.",
             "columns": [
                 {"name": "diagnosis_id", "type": "int64", "key": True},
-                {"name": "diagnosis_code", "type": "string"},
-                {"name": "diagnosis_description", "type": "string"},
-                {"name": "category", "type": "string"},
+                {"name": "diagnosis_code", "type": "string",
+                 "description": "ICD-10 diagnosis code."},
+                {"name": "diagnosis_description", "type": "string",
+                 "description": "Plain-language diagnosis name."},
+                {"name": "category", "type": "string",
+                 "description": "Clinical category of the diagnosis."},
             ],
             "rows": [
                 [1, "I21.9", "Acute myocardial infarction", "Cardiovascular"],
@@ -158,24 +171,29 @@ SPEC = {
              "format": "$ #,0.00", "description": "Total billed amount across encounters."},
             {"name": "Encounters #",
              "expression": "DISTINCTCOUNT(Encounters[encounter_id])",
-             "format": "#,0"},
+             "format": "#,0", "description": "Number of patient encounters."},
             {"name": "Total Patient Days",
              "expression": "SUM(Encounters[length_of_stay])",
-             "format": "#,0"},
+             "format": "#,0", "description": "Total inpatient days across encounters."},
             {"name": "Avg Length of Stay",
              "expression": "AVERAGE(Encounters[length_of_stay])",
-             "format": "#,0.0"},
+             "format": "#,0.0", "description": "Average length of stay per encounter, in days."},
             {"name": "Avg Billed per Encounter",
              "expression": "DIVIDE([Total Billed Revenue], [Encounters #])",
-             "format": "$ #,0.00"},
-            {"name": "Insured Patients #",
-             "expression": "DISTINCTCOUNT(Patients[patient_id])",
+             "format": "$ #,0.00", "description": "Average billed amount per encounter."},
+            # Count patients from the fact's foreign key, never from the
+            # Patients dimension: Departments, Physicians and Diagnoses filter
+            # Encounters, not Patients, so DISTINCTCOUNT(Patients[patient_id])
+            # would return every patient in every department.
+            {"name": "Patients #",
+             "expression": "DISTINCTCOUNT(Encounters[patient_id])",
              "format": "#,0",
-             "description": "Distinct patients in context, e.g. sliced by insurer."},
+             "description": "Distinct patients with an encounter in context."},
             {"name": "Avg Billed per Patient",
-             "expression": "DIVIDE([Total Billed Revenue], [Insured Patients #])",
-             "format": "$ #,0.00"},
-            {"name": "Revenue Share by Insurer",
+             "expression": "DIVIDE([Total Billed Revenue], [Patients #])",
+             "format": "$ #,0.00",
+             "description": "Average billed amount per distinct patient seen."},
+            {"name": "Insurer Revenue Share %",
              "expression": (
                  "DIVIDE([Total Billed Revenue], "
                  "CALCULATE([Total Billed Revenue], ALL(InsuranceCompanies)))"
@@ -191,7 +209,7 @@ SPEC = {
         {"from": "Encounters.diagnosis_id", "to": "Diagnoses.diagnosis_id"},
         {"from": "Encounters.admission_date", "to": "__Calendar.Date"},
         {"from": "Encounters.discharge_date", "to": "__Calendar.Date", "active": False},
-        {"from": "Patients.insurance_company_id", "to": "InsuranceCompanies.company_id"},
+        {"from": "Patients.insurance_company_id", "to": "InsuranceCompanies.insurance_company_id"},
     ],
 }
 

@@ -5,7 +5,8 @@ Then: tmdl-preflight check out/PhysioClinic
 
 Star schema:
     Patients (dim)  Therapists (dim)  TreatmentTypes (dim)
-    Visits (fact)   __Calendar (calc dim)   Measures
+    Clinics (dim)   Diagnoses (dim)
+    Visits (fact)   __Calendar (calc dim)   Clinic Measures
 """
 
 from __future__ import annotations
@@ -27,11 +28,16 @@ SPEC = {
             "description": "One row per patient registered at the clinic.",
             "columns": [
                 {"name": "patient_id", "type": "int64", "key": True},
-                {"name": "patient_name", "type": "string"},
-                {"name": "gender", "type": "string"},
-                {"name": "age_band", "type": "string"},
-                {"name": "referral_source", "type": "string"},
-                {"name": "insurance_provider", "type": "string"},
+                {"name": "patient_name", "type": "string",
+                 "description": "Patient's full name."},
+                {"name": "gender", "type": "string",
+                 "description": "Patient's recorded gender."},
+                {"name": "age_band", "type": "string",
+                 "description": "Age band at registration, e.g. 30-44."},
+                {"name": "referral_source", "type": "string",
+                 "description": "How the patient was referred to the clinic."},
+                {"name": "insurance_provider", "type": "string",
+                 "description": "Patient's insurer, or Self-Pay."},
             ],
             "rows": [
                 [1, "Eleni Vasquez", "Female", "30-44", "GP Referral", "BlueCross"],
@@ -48,10 +54,14 @@ SPEC = {
             "description": "Physiotherapists and their specialties.",
             "columns": [
                 {"name": "therapist_id", "type": "int64", "key": True},
-                {"name": "therapist_name", "type": "string"},
-                {"name": "specialty", "type": "string"},
-                {"name": "seniority", "type": "string"},
-                {"name": "hourly_rate", "type": "double", "format": "$ #,0.00"},
+                {"name": "therapist_name", "type": "string",
+                 "description": "Physiotherapist's name."},
+                {"name": "specialty", "type": "string",
+                 "description": "Therapist's clinical specialty."},
+                {"name": "seniority", "type": "string",
+                 "description": "Seniority level: Junior, Mid or Senior."},
+                {"name": "hourly_rate", "type": "double", "format": "$ #,0.00",
+                 "description": "Therapist's hourly rate, in USD."},
             ],
             "rows": [
                 [1, "Dr. Hannah Wells", "Sports Injury", "Senior", 120.00],
@@ -65,10 +75,14 @@ SPEC = {
             "description": "Catalog of treatment / service types offered.",
             "columns": [
                 {"name": "treatment_type_id", "type": "int64", "key": True},
-                {"name": "treatment_name", "type": "string"},
-                {"name": "category", "type": "string"},
-                {"name": "standard_duration_min", "type": "int64"},
-                {"name": "list_price", "type": "double", "format": "$ #,0.00"},
+                {"name": "treatment_name", "type": "string",
+                 "description": "Treatment or service name."},
+                {"name": "category", "type": "string",
+                 "description": "Treatment category, e.g. Hands-On."},
+                {"name": "standard_duration_min", "type": "int64",
+                 "description": "Standard session length, in minutes."},
+                {"name": "list_price", "type": "double", "format": "$ #,0.00",
+                 "description": "List price of the treatment, in USD."},
             ],
             "rows": [
                 [1, "Initial Assessment", "Assessment", 60, 110.00],
@@ -84,10 +98,14 @@ SPEC = {
             "description": "Physical clinic locations.",
             "columns": [
                 {"name": "clinic_id", "type": "int64", "key": True},
-                {"name": "clinic_name", "type": "string"},
-                {"name": "city", "type": "string"},
-                {"name": "region", "type": "string"},
-                {"name": "treatment_rooms", "type": "int64"},
+                {"name": "clinic_name", "type": "string",
+                 "description": "Clinic location name."},
+                {"name": "city", "type": "string",
+                 "description": "City the clinic is in."},
+                {"name": "region", "type": "string",
+                 "description": "Sales region of the clinic."},
+                {"name": "treatment_rooms", "type": "int64",
+                 "description": "Number of treatment rooms at the clinic."},
             ],
             "rows": [
                 [1, "Riverside Physio", "Portland", "West", 6],
@@ -100,9 +118,12 @@ SPEC = {
             "description": "Clinical diagnosis / presenting condition for a visit.",
             "columns": [
                 {"name": "diagnosis_id", "type": "int64", "key": True},
-                {"name": "diagnosis_name", "type": "string"},
-                {"name": "body_region", "type": "string"},
-                {"name": "condition_type", "type": "string"},
+                {"name": "diagnosis_name", "type": "string",
+                 "description": "Presenting condition."},
+                {"name": "body_region", "type": "string",
+                 "description": "Body region affected."},
+                {"name": "condition_type", "type": "string",
+                 "description": "Acute, Chronic or Post-Surgical."},
             ],
             "rows": [
                 [1, "Lower Back Pain", "Spine", "Chronic"],
@@ -166,19 +187,22 @@ SPEC = {
              "format": "$ #,0.00", "description": "Total fees charged across visits."},
             {"name": "Visits #", "expression": "DISTINCTCOUNT(Visits[visit_id])",
              "format": "#,0", "description": "Number of clinical visits."},
-            {"name": "Patients Seen",
-             "expression": "DISTINCTCOUNT(Visits[patient_id])", "format": "#,0"},
+            {"name": "Patients #",
+             "expression": "DISTINCTCOUNT(Visits[patient_id])", "format": "#,0",
+             "description": "Distinct patients with a visit in context."},
             {"name": "Avg Fee per Visit",
-             "expression": "DIVIDE([Total Revenue], [Visits #])", "format": "$ #,0.00"},
+             "expression": "DIVIDE([Total Revenue], [Visits #])", "format": "$ #,0.00",
+             "description": "Average fee charged per visit."},
             {"name": "Total Treatment Hours",
              "expression": "DIVIDE(SUM(Visits[duration_minutes]), 60)",
-             "format": "#,0.0"},
+             "format": "#,0.0", "description": "Total treatment time, in hours."},
             {"name": "Avg Visits per Patient",
-             "expression": "DIVIDE([Visits #], [Patients Seen])", "format": "#,0.0"},
+             "expression": "DIVIDE([Visits #], [Patients #])", "format": "#,0.0",
+             "description": "Average number of visits per distinct patient."},
             {"name": "No-Shows #",
              "expression": "CALCULATE([Visits #], Visits[attendance_status] = \"No-Show\")",
              "format": "#,0", "description": "Count of visits marked as no-show."},
-            {"name": "No-Show Rate",
+            {"name": "No-Show %",
              "expression": "DIVIDE([No-Shows #], [Visits #])", "format": "0.0%",
              "description": "Share of booked visits where the patient did not attend."},
             {"name": "Diagnoses per Therapist",
