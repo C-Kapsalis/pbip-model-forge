@@ -1,7 +1,7 @@
 # Contributing to pbip-model-forge
 
-**pbip-model-forge** generates openable Power BI PBIP semantic models — with
-sample data physically loaded — from plain-dict specs, so you can prototype a
+**pbip-model-forge** generates openable Power BI PBIP semantic models, with
+sample data physically loaded, from plain-dict specs, so you can prototype a
 data model in chat and hand the diagram to data engineers as a spec. It ships as
 a Claude Code skill plus a small standard-library Python builder.
 
@@ -33,18 +33,18 @@ tmdl-preflight check template        # must report 0 errors
 python -m pytest                     # or: python tests/test_enter_data.py
 ```
 
-The builder itself has **no pip dependencies** — it uses only `json`, `zlib`,
+The builder itself has **no pip dependencies**: it uses only `json`, `zlib`,
 `base64`, and `uuid` from the standard library. The `dev` extra installs
 `pytest`.
 
 ## Required external dependency: tmdl-preflight
 
 Validation is not optional and is not vendored. **`tmdl-preflight`** is a
-separate tool (the user's local package, not on PyPI) that determines whether a
-generated model is structurally openable. Install it from its own folder:
+separate tool that determines whether a generated model is structurally
+openable. Install it from GitHub:
 
 ```powershell
-pip install -e C:\path\to\tmdl-preflight
+pip install git+https://github.com/C-Kapsalis/tmdl-preflight.git
 ```
 
 Every change that touches model generation must be verified with
@@ -66,8 +66,11 @@ tests/test_enter_data.py    golden-value regression tests for the encoder
 .claude/skills/
   create-sample-model/      main skill: domain prompt -> validated PBIP spec
   validate-and-expand/      the expand-and-keep-valid loop
-docs/                       vision, artifact checklist (playbook), encoding guide
 ```
+
+The full documentation (vision, the artifact checklist / will-it-open
+playbook, the entered-data encoding guide) lives in the separate
+`pbip-model-forge-documentation` repository, published on Read the Docs.
 
 ## How the pieces fit
 
@@ -75,13 +78,13 @@ docs/                       vision, artifact checklist (playbook), encoding guid
    **`create-sample-model`** skill, which invents a **spec dict** (tables,
    columns, sample rows, measures, relationships).
 2. **`build_model.build_pbip(spec, out_dir)`** renders every TMDL/JSON file the
-   [artifact checklist](docs/artifact-checklist.md) requires. It calls
+   artifact checklist (in `pbip-model-forge-documentation`) requires. It calls
    **`enter_data`** to encode row data as the compressed entered-data blob (so
    data loads with no external source and without tripping the composite-model
    error), and **`blank_report`** to emit the blank report.
 3. **`tmdl-preflight check`** is the gate: 0 errors ⇒ structurally openable.
 4. The **`validate-and-expand`** skill grows an existing model by editing the
-   spec and re-running the gate — never by hand-editing generated TMDL.
+   spec and re-running the gate, never by hand-editing generated TMDL.
 
 The spec dict is always the source of truth; TMDL is regenerated, never
 hand-edited.
@@ -89,7 +92,7 @@ hand-edited.
 ## Extending
 
 ### Add a column type
-Edit `TYPE_MAP` in `src/pbip_model_forge/enter_data.py` — map the keyword to a
+Edit `TYPE_MAP` in `src/pbip_model_forge/enter_data.py`: map the keyword to a
 `dataType` (must be in tmdl-preflight's `VALID_DATA_TYPES`) and a
 `TransformColumnTypes` target. Add a coercion branch to `stringify` if the
 Python value needs special formatting. Add a golden/round-trip case to
@@ -104,8 +107,8 @@ run `tmdl-preflight check template`.
 
 ### Add or change a skill
 Skills live in `.claude/skills/<name>/SKILL.md` with YAML frontmatter (`name`,
-`description`). Keep the golden rule visible: never hand-author TMDL/base64 —
-always go through `build_pbip` — and always gate on `tmdl-preflight`.
+`description`). Keep the golden rule visible: never hand-author TMDL/base64;
+always go through `build_pbip`, and always gate on `tmdl-preflight`.
 
 ## Encoder integrity
 
@@ -121,14 +124,15 @@ you have broken openability). Do not "clean up" the raw-DEFLATE window-bits
 - Use clear, imperative commit subjects (e.g. `Add currency column type`).
 - Every PR that touches generation must show `tmdl-preflight check` at 0 errors
   and passing `pytest`.
-- Update the relevant `docs/` guide when behavior changes; if you touch the
-  playbook invariants, update `docs/artifact-checklist.md`.
+- Update the relevant guide in `pbip-model-forge-documentation` when behavior
+  changes; if you touch the playbook invariants, update its artifact
+  checklist page.
 
 ## Issues
 
 When filing a bug, include: the spec dict (or steps) that produced it, the full
-`tmdl-preflight check` output, your Python and tmdl-preflight versions, and —
-if a model won't open in Power BI Desktop — the exact Desktop error text. Feature
+`tmdl-preflight check` output, your Python and tmdl-preflight versions, and, if
+a model won't open in Power BI Desktop, the exact Desktop error text. Feature
 requests: describe the domain/model shape you want to generate.
 
 ## License

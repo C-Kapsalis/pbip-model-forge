@@ -17,11 +17,11 @@ keywords = ["powerbi", "pbip", "tmdl", "semantic-model", "data-modeling"]
 dependencies = []
 
 [project.optional-dependencies]
-# tmdl-preflight is a REQUIRED companion tool for validation, but it is NOT on
-# PyPI: it is the user's own local package, installed separately from
-#   C:\Users\<you>\Desktop\tmdl-preflight
-# (e.g. `pip install -e path\to\tmdl-preflight`). The build pipeline shells out
-# to the `tmdl-preflight` console command; see README "Requirements".
+# tmdl-preflight is a REQUIRED companion tool for validation. It is not bundled;
+# install it from GitHub:
+#   pip install git+https://github.com/C-Kapsalis/tmdl-preflight.git
+# The build pipeline shells out to the `tmdl-preflight` console command; see
+# README "Requirements".
 dev = ["pytest>=7"]
 
 [project.scripts]
