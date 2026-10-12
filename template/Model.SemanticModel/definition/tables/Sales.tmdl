@@ -1,12 +1,13 @@
 /// One row per order line. Core fact table.
 table Sales
 	isHidden
-	lineageTag: f61821f8-5646-45a5-b489-fd3b7ca832d8
+	lineageTag: 3862afa4-83af-5b77-93fc-6c8c92880c01
 
 	column order_id
 		dataType: int64
 		isHidden
-		lineageTag: 89040923-c680-46e0-a6c0-44f50806ffe5
+		isAvailableInMdx: false
+		lineageTag: 896c2c6f-5ec0-5f07-897e-1bf9e2d8038d
 		summarizeBy: none
 		sourceColumn: order_id
 
@@ -14,7 +15,7 @@ table Sales
 		dataType: dateTime
 		isHidden
 		formatString: General Date
-		lineageTag: 30711fd0-244e-463d-a1ff-73f7d09259f8
+		lineageTag: 4a38be67-1a81-57be-be82-7828da3ba351
 		summarizeBy: none
 		sourceColumn: order_date
 
@@ -22,35 +23,37 @@ table Sales
 		dataType: dateTime
 		isHidden
 		formatString: General Date
-		lineageTag: d5e7f87e-843d-4b2a-9a0a-a04e6883b363
+		lineageTag: 0db68324-7248-54eb-b922-4f1c316fed27
 		summarizeBy: none
 		sourceColumn: ship_date
 
 	column customer_id
 		dataType: int64
 		isHidden
-		lineageTag: 6bf8e53b-82a5-4d9d-b653-d4daa5b91a8b
+		lineageTag: 80869978-7dfd-5fab-9405-49bb681ec566
 		summarizeBy: none
 		sourceColumn: customer_id
 
 	column product_id
 		dataType: int64
 		isHidden
-		lineageTag: a7638889-b72f-40dd-989f-91289927d3ef
+		lineageTag: c5bcd2b3-9b80-521f-ad02-cc0e9569ea3b
 		summarizeBy: none
 		sourceColumn: product_id
 
 	column quantity
 		dataType: int64
 		isHidden
-		lineageTag: 3fc6e378-9740-4d5b-ba91-402b5fecae82
+		isAvailableInMdx: false
+		lineageTag: 1dc7f059-fabf-517b-aa80-b649bfae445d
 		summarizeBy: sum
 		sourceColumn: quantity
 
 	column net_amount
 		dataType: double
 		isHidden
-		lineageTag: f781e954-92da-43e6-8441-93c456f7acb2
+		isAvailableInMdx: false
+		lineageTag: 5247f861-5952-5ef0-8241-04da377390d1
 		summarizeBy: sum
 		sourceColumn: net_amount
 

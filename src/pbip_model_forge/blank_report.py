@@ -17,8 +17,12 @@ import uuid
 from pathlib import Path
 
 
-def write_blank_report(out_dir: str | Path, name: str) -> Path:
-    """Write the blank report folder for model ``name`` under ``out_dir``."""
+def write_blank_report(out_dir: str | Path, name: str,
+                       logical_id: str | None = None) -> Path:
+    """Write the blank report folder for model ``name`` under ``out_dir``.
+
+    ``logical_id`` defaults to a random UUID; build_pbip passes a deterministic
+    one so rebuilds are byte-identical."""
     out_dir = Path(out_dir)
     report_dir = out_dir / f"{name}.Report"
     report_dir.mkdir(parents=True, exist_ok=True)
@@ -28,7 +32,7 @@ def write_blank_report(out_dir: str | Path, name: str) -> Path:
             {
                 "$schema": "https://developer.microsoft.com/json-schemas/fabric/gitIntegration/platformProperties/2.0.0/schema.json",
                 "metadata": {"type": "Report", "displayName": name},
-                "config": {"version": "2.0", "logicalId": str(uuid.uuid4())},
+                "config": {"version": "2.0", "logicalId": logical_id or str(uuid.uuid4())},
             },
             indent=2,
         ),

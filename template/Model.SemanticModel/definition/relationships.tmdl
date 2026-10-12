@@ -1,16 +1,16 @@
-relationship 6c6ecf1a-e82d-43f4-bc97-e367ab9baf4c
+relationship e0213053-e1ab-5806-aaf6-81e8c6bfa5ae
 	fromColumn: Sales.product_id
 	toColumn: Products.product_id
 
-relationship 367d31e7-744b-43a3-b923-a9a773f976ef
+relationship db923897-841e-5f69-a90f-ca27ddd0c357
 	fromColumn: Sales.customer_id
 	toColumn: Customers.customer_id
 
-relationship 268c0204-39a6-4c9c-89dd-8d4918e3ad7a
+relationship 036b1941-ec6b-51ef-86e2-d384ff80d2f4
 	fromColumn: Sales.order_date
 	toColumn: __Calendar.Date
 
-relationship 082cc6ac-f542-4d8e-80c0-9375dc670968
+relationship 7f6e26fe-4b07-53ed-ab72-3f0c908e1421
 	isActive: false
 	fromColumn: Sales.ship_date
 	toColumn: __Calendar.Date

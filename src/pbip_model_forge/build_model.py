@@ -13,9 +13,13 @@ artifact set the will-it-open playbook requires:
         definition/relationships.tmdl
         definition/tables/*.tmdl
     <name>.Report/            (blank: .platform + definition.pbir only)
+    handoff/                  (manifest.json + SPEC.md, see handoff.py)
 
-Everything is parametric. The output is designed to pass
-``tmdl-preflight check`` with zero errors.
+Everything is parametric and deterministic: every lineageTag, relationship
+name and logicalId is a UUID5 of the object's path in the model, so building
+the same spec twice yields a byte-identical tree. The output is designed to
+pass ``tmdl-preflight check`` with zero errors; ``pbip-forge check`` (see
+check.py) judges the spec itself against the modeling rules.
 
 Spec shape (all keys except ``name``/``tables`` optional)::
 
@@ -24,31 +28,41 @@ Spec shape (all keys except ``name``/``tables`` optional)::
       "tables": [
         {
           "name": "Products",
-          "description": "Product catalog",   # optional -> /// doc comment
+          "description": "Product catalog.",   # optional -> /// doc comment
+          "role": "dimension",                   # optional; inferred otherwise
           "hidden": False,                       # optional
           "columns": [
             {"name": "product_id", "type": "int64", "key": True,
-             "summarizeBy": "none", "format": None, "hidden": False},
+             "summarizeBy": "none", "format": None, "hidden": False,
+             "description": "..."},
             ...
           ],
           "rows": [[1, "Road Bike", 1200.0], ...],
         },
         ...
       ],
+      # start_year / end_year are inferred from the fact date columns if omitted
       "calendar": {"name": "__Calendar", "start_year": 2024, "end_year": 2025},
       "measures_table": {
         "name": "Key Measures",
         "description": "...",
         "measures": [
-          {"name": "Revenue", "expression": "SUM(Sales[net_amount])",
-           "format": "$ #,0.00", "description": "..."},
+          {"name": "Total Revenue", "expression": "SUM(Sales[net_amount])",
+           "format": "$ #,0.00", "description": "...",
+           "displayFolder": "Base",              # optional; default by kind
+           "helper": False},                     # True -> hidden, _Helpers
         ],
       },
       "relationships": [
         {"from": "Sales.product_id", "to": "Products.product_id",
-         "active": True},
+         "active": True},                        # "crossFilter": "both" allowed
       ],
     }
+
+Generator defaults: ``key`` columns and relationship ``from`` columns are
+hidden; numeric fact columns that are not keys or relationship endpoints are
+hidden with ``isAvailableInMdx: false``; every measure gets a display folder
+(``Counts`` / ``Ratios`` / ``Base`` unless the spec names one).
 """
 
 from __future__ import annotations
@@ -61,8 +75,13 @@ from typing import Any
 
 from .enter_data import DUMMY_PARTITION_SOURCE, entered_data_source, resolve_type
 from .blank_report import write_blank_report
+from . import model_info as mi
 
 _SIMPLE_IDENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+# Fixed namespace for every generated identifier. Never change it: doing so
+# changes every lineageTag in every model built from then on.
+NAMESPACE = uuid.uuid5(uuid.NAMESPACE_URL, "https://github.com/C-Kapsalis/pbip-model-forge")
 
 
 def _q(name: str) -> str:
@@ -72,12 +91,16 @@ def _q(name: str) -> str:
     return "'" + name.replace("'", "''") + "'"
 
 
-def _uuid() -> str:
-    return str(uuid.uuid4())
+def stable_id(model: str, table: str, kind: str, name: str) -> str:
+    """Deterministic UUID for one model object (lineageTag, logicalId, ...)."""
+    return str(uuid.uuid5(NAMESPACE, f"{model}/{table}/{kind}/{name}"))
 
 
 def _doc(text: str | None, indent: str = "") -> str:
-    """Render an optional description as TMDL /// doc-comment lines."""
+    """Render an optional description as TMDL /// doc-comment lines.
+
+    The lines are emitted directly above the declaration they document; a
+    blank line between the two would orphan the comment."""
     if not text:
         return ""
     return "".join(f"{indent}/// {line}\n" for line in text.splitlines())
@@ -86,8 +109,10 @@ def _doc(text: str | None, indent: str = "") -> str:
 # ---------------------------------------------------------------------------
 # Table renderers
 # ---------------------------------------------------------------------------
-def render_data_table(table: dict[str, Any]) -> str:
+def render_data_table(table: dict[str, Any], model: str = "Model",
+                      spec: dict[str, Any] | None = None) -> str:
     """Render an import (M / entered-data) table file."""
+    spec = spec if spec is not None else {"tables": [table]}
     name = table["name"]
     cols = table["columns"]
     out: list[str] = []
@@ -95,22 +120,25 @@ def render_data_table(table: dict[str, Any]) -> str:
     out.append(f"table {_q(name)}\n")
     if table.get("hidden"):
         out.append("\tisHidden\n")
-    out.append(f"\tlineageTag: {_uuid()}\n")
+    out.append(f"\tlineageTag: {stable_id(model, name, 'table', name)}\n")
     out.append("\n")
 
     for col in cols:
         cname = col["name"]
         info = resolve_type(col["type"])
+        eff = mi.column_defaults(spec, table, col)
         out.append(_doc(col.get("description"), "\t"))
         out.append(f"\tcolumn {_q(cname)}\n")
         out.append(f"\t\tdataType: {info['dataType']}\n")
         if col.get("key"):
             out.append("\t\tisKey\n")
-        if col.get("hidden"):
+        if eff["hidden"]:
             out.append("\t\tisHidden\n")
+        if not eff["mdx"]:
+            out.append("\t\tisAvailableInMdx: false\n")
         if col.get("format"):
             out.append(f"\t\tformatString: {col['format']}\n")
-        out.append(f"\t\tlineageTag: {_uuid()}\n")
+        out.append(f"\t\tlineageTag: {stable_id(model, name, 'column', cname)}\n")
         out.append(f"\t\tsummarizeBy: {col.get('summarizeBy', 'none')}\n")
         out.append(f"\t\tsourceColumn: {cname}\n")
         out.append("\n")
@@ -129,13 +157,13 @@ def render_data_table(table: dict[str, Any]) -> str:
     return "".join(out)
 
 
-def render_measures_table(mt: dict[str, Any]) -> str:
+def render_measures_table(mt: dict[str, Any], model: str = "Model") -> str:
     """Render a measures-only table with the mandated dummy partition."""
     name = mt["name"]
     out: list[str] = []
     out.append(_doc(mt.get("description")))
     out.append(f"table {_q(name)}\n")
-    out.append(f"\tlineageTag: {_uuid()}\n")
+    out.append(f"\tlineageTag: {stable_id(model, name, 'table', name)}\n")
     out.append("\n")
 
     for m in mt.get("measures", []):
@@ -150,7 +178,12 @@ def render_measures_table(mt: dict[str, Any]) -> str:
             out.append(f"\tmeasure {_q(m['name'])} = {expr}\n")
         if m.get("format"):
             out.append(f"\t\tformatString: {m['format']}\n")
-        out.append(f"\t\tlineageTag: {_uuid()}\n")
+        if mi.measure_hidden(m):
+            out.append("\t\tisHidden\n")
+        folder = mi.measure_folder(m)
+        if folder:
+            out.append(f"\t\tdisplayFolder: {folder}\n")
+        out.append(f"\t\tlineageTag: {stable_id(model, name, 'measure', m['name'])}\n")
         out.append("\n")
 
     out.append(f"\tpartition {_q(name)} = m\n")
@@ -164,85 +197,64 @@ def render_measures_table(mt: dict[str, Any]) -> str:
     return "".join(out)
 
 
-def render_calendar_table(cal: dict[str, Any]) -> str:
-    """Render a self-contained calculated Calendar table (no PBI_ResultType)."""
-    name = cal.get("name", "__Calendar")
-    start = cal.get("start_year", 2024)
-    end = cal.get("end_year", 2025)
-    tags = [_uuid() for _ in range(9)]
-    return f"""/// Central date dimension. Self-contained calculated table so it always
-/// populates without an external source.
-table {_q(name)}
-\tlineageTag: {tags[0]}
-\tdataCategory: Time
+def render_calendar_table(cal: dict[str, Any], model: str = "Model",
+                          years: tuple[int, int] | None = None) -> str:
+    """Render a self-contained calculated Calendar table (no PBI_ResultType).
 
-\tcolumn Date
-\t\tdataType: dateTime
-\t\tisKey
-\t\tformatString: Long Date
-\t\tlineageTag: {tags[1]}
-\t\tsummarizeBy: none
-\t\tsourceColumn: [Date]
+    ``years`` is the (start, end) range; by default the calendar dict's
+    ``start_year`` / ``end_year`` (see model_info.calendar_years for the
+    inference build_pbip applies)."""
+    name = cal.get("name", mi.DEFAULT_CALENDAR_NAME)
+    if years is None:
+        years = (cal.get("start_year", mi.DEFAULT_START_YEAR),
+                 cal.get("end_year", mi.DEFAULT_END_YEAR))
+    start, end = years
+    out: list[str] = [
+        "/// Central date dimension. Self-contained calculated table so it always\n",
+        "/// populates without an external source.\n",
+        f"table {_q(name)}\n",
+        f"\tlineageTag: {stable_id(model, name, 'table', name)}\n",
+        "\tdataCategory: Time\n",
+        "\n",
+    ]
+    for col in mi.CALENDAR_COLUMNS:
+        cname = col["name"]
+        out.append(_doc(col["description"], "\t"))
+        out.append(f"\tcolumn {_q(cname)}\n")
+        out.append(f"\t\tdataType: {col['dataType']}\n")
+        if cname == "Date":
+            out.append("\t\tisKey\n")
+        if col["hidden"]:
+            out.append("\t\tisHidden\n")
+        if col["format"]:
+            out.append(f"\t\tformatString: {col['format']}\n")
+        out.append(f"\t\tlineageTag: {stable_id(model, name, 'column', cname)}\n")
+        out.append("\t\tsummarizeBy: none\n")
+        out.append(f"\t\tsourceColumn: [{cname}]\n")
+        if col["sortBy"]:
+            out.append(f"\t\tsortByColumn: {_q(col['sortBy'])}\n")
+        out.append("\n")
 
-\tcolumn 'Calendar Year'
-\t\tdataType: int64
-\t\tformatString: 0
-\t\tlineageTag: {tags[2]}
-\t\tsummarizeBy: none
-\t\tsourceColumn: [Calendar Year]
+    hier = "Date Hierarchy"
+    out.append(f"\thierarchy {_q(hier)}\n")
+    out.append(f"\t\tlineageTag: {stable_id(model, name, 'hierarchy', hier)}\n")
+    for level in mi.CALENDAR_HIERARCHY:
+        out.append("\n")
+        out.append(f"\t\tlevel {_q(level)}\n")
+        out.append(f"\t\t\tlineageTag: {stable_id(model, name, 'level', hier + '/' + level)}\n")
+        out.append(f"\t\t\tcolumn: {_q(level)}\n")
+    out.append("\n")
 
-\tcolumn 'Calendar Month'
-\t\tdataType: int64
-\t\tisHidden
-\t\tformatString: 0
-\t\tlineageTag: {tags[3]}
-\t\tsummarizeBy: none
-\t\tsourceColumn: [Calendar Month]
-
-\tcolumn 'Calendar Month Name'
-\t\tdataType: string
-\t\tlineageTag: {tags[4]}
-\t\tsummarizeBy: none
-\t\tsourceColumn: [Calendar Month Name]
-\t\tsortByColumn: 'Calendar Month'
-
-\tcolumn 'Calendar Quarter'
-\t\tdataType: int64
-\t\tformatString: 0
-\t\tlineageTag: {tags[5]}
-\t\tsummarizeBy: none
-\t\tsourceColumn: [Calendar Quarter]
-
-\thierarchy 'Date Hierarchy'
-\t\tlineageTag: {tags[6]}
-
-\t\tlevel 'Calendar Year'
-\t\t\tlineageTag: {_uuid()}
-\t\t\tcolumn: 'Calendar Year'
-
-\t\tlevel 'Calendar Quarter'
-\t\t\tlineageTag: {_uuid()}
-\t\t\tcolumn: 'Calendar Quarter'
-
-\t\tlevel 'Calendar Month'
-\t\t\tlineageTag: {_uuid()}
-\t\t\tcolumn: 'Calendar Month'
-
-\t\tlevel Date
-\t\t\tlineageTag: {_uuid()}
-\t\t\tcolumn: Date
-
-\tpartition {_q(name)} = calculated
-\t\tmode: import
-\t\tsource =
-\t\t\t\tADDCOLUMNS (
-\t\t\t\t    CALENDAR ( DATE ( {start}, 1, 1 ), DATE ( {end}, 12, 31 ) ),
-\t\t\t\t    "Calendar Year", YEAR ( [Date] ),
-\t\t\t\t    "Calendar Month", MONTH ( [Date] ),
-\t\t\t\t    "Calendar Month Name", FORMAT ( [Date], "MMMM" ),
-\t\t\t\t    "Calendar Quarter", QUARTER ( [Date] )
-\t\t\t\t)
-"""
+    adds = [f'\t\t\t\t    "{c["name"]}", {c["dax"]}'
+            for c in mi.CALENDAR_COLUMNS if c["dax"]]
+    out.append(f"\tpartition {_q(name)} = calculated\n")
+    out.append("\t\tmode: import\n")
+    out.append("\t\tsource =\n")
+    out.append("\t\t\t\tADDCOLUMNS (\n")
+    out.append(f"\t\t\t\t    CALENDAR ( DATE ( {start}, 1, 1 ), DATE ( {end}, 12, 31 ) ),\n")
+    out.append(",\n".join(adds) + "\n")
+    out.append("\t\t\t\t)\n")
+    return "".join(out)
 
 
 # ---------------------------------------------------------------------------
@@ -270,14 +282,22 @@ annotation PBI_ProTooling = ["DevMode"]
 """
 
 
-def render_relationships(relationships: list[dict[str, Any]]) -> str:
+def render_relationships(relationships: list[dict[str, Any]],
+                         model: str = "Model") -> str:
     blocks: list[str] = []
+    seen: dict[str, int] = {}
     for rel in relationships:
         from_tbl, from_col = rel["from"].split(".", 1)
         to_tbl, to_col = rel["to"].split(".", 1)
-        lines = [f"relationship {_uuid()}"]
+        key = f"{rel['from']}->{rel['to']}"
+        seen[key] = seen.get(key, 0) + 1
+        if seen[key] > 1:
+            key = f"{key}#{seen[key]}"
+        lines = [f"relationship {stable_id(model, '', 'relationship', key)}"]
         if rel.get("active", True) is False:
             lines.append("\tisActive: false")
+        if str(rel.get("crossFilter", "")).lower() in ("both", "bothdirections"):
+            lines.append("\tcrossFilteringBehavior: bothDirections")
         lines.append(f"\tfromColumn: {_q(from_tbl)}.{_q(from_col)}")
         lines.append(f"\ttoColumn: {_q(to_tbl)}.{_q(to_col)}")
         blocks.append("\n".join(lines))
@@ -288,14 +308,30 @@ def render_relationships(relationships: list[dict[str, Any]]) -> str:
 # Top-level assembly
 # ---------------------------------------------------------------------------
 # Table names Power BI Desktop rejects on open ("Unsupported Table name
-# '<name>' has been found in data model schema") — most notably the implicit
+# '<name>' has been found in data model schema"), most notably the implicit
 # measures container "Measures". Compared case-insensitively.
 RESERVED_TABLE_NAMES = {"measures"}
 
 
-def build_pbip(spec: dict[str, Any], out_dir: str | Path) -> Path:
+def build_pbip(spec: dict[str, Any], out_dir: str | Path, *,
+               check: bool = False, profile: str = "mockup",
+               handoff: bool = True) -> Path:
     """Write the complete PBIP for ``spec`` under ``out_dir``. Returns the
-    path to the ``.pbip`` file."""
+    path to the ``.pbip`` file.
+
+    ``check=True`` runs ``pbip-forge check`` on the spec first (with the given
+    ``profile``) and raises :class:`pbip_model_forge.check.SpecCheckError`,
+    before writing anything, if any P0/P1 violation is found.
+    ``handoff=True`` (the default) also writes ``<out_dir>/handoff/`` with
+    ``manifest.json`` and ``SPEC.md``.
+    """
+    if check:
+        from .check import SpecCheckError, blocking, check_spec
+
+        found = check_spec(spec, profile=profile)
+        if blocking(found):
+            raise SpecCheckError(found, profile)
+
     out_dir = Path(out_dir)
     name = spec["name"]
     sm_dir = out_dir / f"{name}.SemanticModel"
@@ -307,17 +343,17 @@ def build_pbip(spec: dict[str, Any], out_dir: str | Path) -> Path:
     calendar = spec.get("calendar")
     measures_table = spec.get("measures_table")
 
-    # Guard reserved table names up front — Power BI will not open a model
+    # Guard reserved table names up front: Power BI will not open a model
     # that contains one (e.g. a table literally named "Measures").
     _names = [t["name"] for t in data_tables]
     if calendar:
-        _names.append(calendar.get("name", "__Calendar"))
+        _names.append(calendar.get("name", mi.DEFAULT_CALENDAR_NAME))
     if measures_table:
         _names.append(measures_table["name"])
     for _n in _names:
         if _n.strip().lower() in RESERVED_TABLE_NAMES:
             raise ValueError(
-                f"table name {_n!r} is reserved in Power BI — Desktop refuses "
+                f"table name {_n!r} is reserved in Power BI; Desktop refuses "
                 f"to open the model ('Unsupported Table name'). Rename it, e.g. "
                 f"'Key Measures' or '<Domain> Measures'."
             )
@@ -333,23 +369,24 @@ def build_pbip(spec: dict[str, Any], out_dir: str | Path) -> Path:
     # Data tables
     for t in data_tables:
         (tables_dir / f"{t['name']}.tmdl").write_text(
-            render_data_table(t), encoding="utf-8"
+            render_data_table(t, name, spec), encoding="utf-8"
         )
         all_table_names.append(t["name"])
         import_table_names.append(t["name"])
 
     # Calendar (calculated) -- listed in refs but not in import query order
     if calendar:
-        cname = calendar.get("name", "__Calendar")
+        cname = calendar.get("name", mi.DEFAULT_CALENDAR_NAME)
         (tables_dir / f"{cname}.tmdl").write_text(
-            render_calendar_table(calendar), encoding="utf-8"
+            render_calendar_table(calendar, name, mi.calendar_years(spec)),
+            encoding="utf-8",
         )
         all_table_names.append(cname)
 
     # Measures table
     if measures_table:
         (tables_dir / f"{measures_table['name']}.tmdl").write_text(
-            render_measures_table(measures_table), encoding="utf-8"
+            render_measures_table(measures_table, name), encoding="utf-8"
         )
         all_table_names.append(measures_table["name"])
         import_table_names.append(measures_table["name"])
@@ -362,7 +399,7 @@ def build_pbip(spec: dict[str, Any], out_dir: str | Path) -> Path:
         "database\n\tcompatibilityLevel: 1601\n\n", encoding="utf-8"
     )
     (defn / "relationships.tmdl").write_text(
-        render_relationships(spec.get("relationships", [])), encoding="utf-8"
+        render_relationships(spec.get("relationships", []), name), encoding="utf-8"
     )
     (sm_dir / "definition.pbism").write_text(
         json.dumps(
@@ -380,7 +417,8 @@ def build_pbip(spec: dict[str, Any], out_dir: str | Path) -> Path:
             {
                 "$schema": "https://developer.microsoft.com/json-schemas/fabric/gitIntegration/platformProperties/2.0.0/schema.json",
                 "metadata": {"type": "SemanticModel", "displayName": name},
-                "config": {"version": "2.0", "logicalId": _uuid()},
+                "config": {"version": "2.0",
+                           "logicalId": stable_id(name, "", "platform", "SemanticModel")},
             },
             indent=2,
         ),
@@ -388,7 +426,8 @@ def build_pbip(spec: dict[str, Any], out_dir: str | Path) -> Path:
     )
 
     # Blank report
-    write_blank_report(out_dir, name)
+    write_blank_report(out_dir, name,
+                       logical_id=stable_id(name, "", "platform", "Report"))
 
     # .pbip
     pbip_path = out_dir / f"{name}.pbip"
@@ -404,4 +443,10 @@ def build_pbip(spec: dict[str, Any], out_dir: str | Path) -> Path:
         ),
         encoding="utf-8",
     )
+
+    # Hand-off pack
+    if handoff:
+        from .handoff import write_handoff
+
+        write_handoff(spec, out_dir)
     return pbip_path

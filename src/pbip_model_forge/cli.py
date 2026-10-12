@@ -1,20 +1,100 @@
-"""Tiny CLI: rebuild the seed template, or build a PBIP from a JSON spec file.
+"""Command-line entry points.
 
-Usage:
+``pbip-forge`` (the main CLI)::
+
+    pbip-forge check SPEC [--profile mockup|handoff] [--format text|json]
+    pbip-forge build SPEC OUT_DIR [--check] [--profile ...] [--no-handoff]
+    pbip-forge rules
+
+SPEC is either a JSON file holding the spec dict, or a Python file that
+defines a module-level ``SPEC`` dict (like ``scripts/build_hospital.py``).
+For rows with dates in JSON, pass ISO strings like "2024-01-15".
+``check`` exits 1 when any P0/P1 violation is found, else 0.
+
+``pbip-forge-template`` (kept from 1.0)::
+
     pbip-forge-template                 # rebuild template/ (same as scripts/build_template.py)
     pbip-forge-template spec.json out/  # build a PBIP from a JSON spec into out/
-
-The JSON spec matches the dict shape documented in build_model.build_pbip.
-(For rows with dates, pass ISO strings like "2024-01-15".)
 """
 
 from __future__ import annotations
 
+import argparse
+import importlib.util
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
+from . import __version__
 from .build_model import build_pbip
+from .check import PROFILES, SpecCheckError, blocking, check_spec, format_report, format_rules
+
+
+def load_spec(path: str | Path) -> dict[str, Any]:
+    """Load a spec dict from a ``.json`` file or a ``.py`` file defining ``SPEC``."""
+    path = Path(path)
+    if path.suffix.lower() == ".json":
+        return json.loads(path.read_text(encoding="utf-8"))
+    if path.suffix.lower() == ".py":
+        mod_spec = importlib.util.spec_from_file_location(f"_pbip_spec_{path.stem}", path)
+        if mod_spec is None or mod_spec.loader is None:
+            raise SystemExit(f"cannot load {path}")
+        module = importlib.util.module_from_spec(mod_spec)
+        mod_spec.loader.exec_module(module)
+        spec = getattr(module, "SPEC", None)
+        if not isinstance(spec, dict):
+            raise SystemExit(f"{path} does not define a module-level SPEC dict")
+        return spec
+    raise SystemExit(f"{path}: expected a .json or .py spec file")
+
+
+def forge_main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        prog="pbip-forge",
+        description="Check and build Power BI PBIP models from spec dicts.")
+    parser.add_argument("--version", action="version", version=f"pbip-forge {__version__}")
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    p_check = sub.add_parser("check", help="judge a spec against the FM rules")
+    p_check.add_argument("spec", help="spec .json, or .py defining SPEC")
+    p_check.add_argument("--profile", choices=PROFILES, default="mockup")
+    p_check.add_argument("--format", choices=("text", "json"), default="text")
+
+    p_build = sub.add_parser("build", help="build a PBIP from a spec")
+    p_build.add_argument("spec")
+    p_build.add_argument("out_dir")
+    p_build.add_argument("--check", action="store_true",
+                         help="refuse to build if the check finds P0/P1 violations")
+    p_build.add_argument("--profile", choices=PROFILES, default="mockup")
+    p_build.add_argument("--no-handoff", action="store_true",
+                         help="skip handoff/manifest.json and SPEC.md")
+
+    sub.add_parser("rules", help="list the rule catalog")
+
+    args = parser.parse_args(argv)
+    if args.command == "rules":
+        sys.stdout.write(format_rules())
+        return 0
+
+    spec = load_spec(args.spec)
+    if args.command == "check":
+        found = check_spec(spec, profile=args.profile)
+        if args.format == "json":
+            print(json.dumps({"profile": args.profile,
+                              "violations": [v.to_dict() for v in found]}, indent=2))
+        else:
+            print(format_report(found, args.profile))
+        return 1 if blocking(found) else 0
+
+    try:
+        pbip = build_pbip(spec, args.out_dir, check=args.check, profile=args.profile,
+                          handoff=not args.no_handoff)
+    except SpecCheckError as exc:
+        print(exc, file=sys.stderr)
+        return 1
+    print(f"Built PBIP: {pbip}")
+    return 0
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -41,4 +121,4 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(forge_main())

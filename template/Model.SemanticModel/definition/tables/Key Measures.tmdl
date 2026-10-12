@@ -1,23 +1,30 @@
 /// Measure home table: all user-facing measures live here.
 table 'Key Measures'
-	lineageTag: 20c35b40-271d-4bb6-8643-2a81f58ea5e7
+	lineageTag: 5333f173-2ce0-5e23-90a1-e259d2b71edf
 
-	/// Total net revenue.
-	measure Revenue = SUM(Sales[net_amount])
+	/// Total net revenue across order lines.
+	measure 'Total Revenue' = SUM(Sales[net_amount])
 		formatString: $ #,0.00
-		lineageTag: 9d482b93-6fbf-49b3-8cc4-ff2efb5d76f4
+		displayFolder: Base
+		lineageTag: b31ef6b5-e080-50ed-8572-666b4e3a0ba7
 
+	/// Number of distinct orders.
 	measure 'Orders #' = DISTINCTCOUNT(Sales[order_id])
 		formatString: #,0
-		lineageTag: 0d4aec1f-bd87-4ac1-9f77-2dc815593dd6
+		displayFolder: Counts
+		lineageTag: b41979b8-c4cb-5703-8c7c-47e8e90732d3
 
-	measure 'Units Sold' = SUM(Sales[quantity])
+	/// Total units sold across order lines.
+	measure 'Total Units' = SUM(Sales[quantity])
 		formatString: #,0
-		lineageTag: a642e43a-02af-43f6-807c-8d031af0f26e
+		displayFolder: Base
+		lineageTag: 4c15f8e4-fc88-5431-be8c-450ea8d785b3
 
-	measure 'Average Order Value' = DIVIDE([Revenue], [Orders #])
+	/// Average net revenue per order.
+	measure 'Avg Order Value' = DIVIDE([Total Revenue], [Orders #])
 		formatString: $ #,0.00
-		lineageTag: 3c3fabd1-0ca5-4459-a886-2017d3a3267d
+		displayFolder: Ratios
+		lineageTag: 4d119d7d-1aa4-58de-8132-e59f39494534
 
 	partition 'Key Measures' = m
 		mode: import

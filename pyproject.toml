@@ -25,6 +25,8 @@ dependencies = []
 dev = ["pytest>=7"]
 
 [project.scripts]
+# `pbip-forge check|build|rules`: the modeling-rule gate and builder CLI.
+pbip-forge = "pbip_model_forge.cli:forge_main"
 # Convenience CLI: `pbip-forge-template` rebuilds the seed template.
 pbip-forge-template = "pbip_model_forge.cli:main"
 

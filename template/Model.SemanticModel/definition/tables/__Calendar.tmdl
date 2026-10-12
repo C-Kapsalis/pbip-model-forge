@@ -1,63 +1,118 @@
 /// Central date dimension. Self-contained calculated table so it always
 /// populates without an external source.
 table __Calendar
-	lineageTag: 8956d3d2-6c5f-442a-ab73-ff09a9042994
+	lineageTag: 812c6c6e-c961-54aa-8dd5-4d057f5c7804
 	dataCategory: Time
 
+	/// One row per calendar day; the key every fact date joins to.
 	column Date
 		dataType: dateTime
 		isKey
 		formatString: Long Date
-		lineageTag: 3ad8901e-1f31-42bf-9f49-62550f76bb5b
+		lineageTag: d360f5c9-8447-57d4-a482-b13b1cc1f461
 		summarizeBy: none
 		sourceColumn: [Date]
 
+	/// Four-digit calendar year, e.g. 2024.
 	column 'Calendar Year'
 		dataType: int64
 		formatString: 0
-		lineageTag: c0721d0b-309f-44f2-85d7-0a3f95e861fc
+		lineageTag: 1173bdb1-a923-5328-b661-889226479451
 		summarizeBy: none
 		sourceColumn: [Calendar Year]
 
+	/// Quarter number 1-4; sort key for Quarter.
+	column 'Calendar Quarter'
+		dataType: int64
+		isHidden
+		formatString: 0
+		lineageTag: 48f9ef6c-6a51-57a4-8c62-4bf880bfd1e3
+		summarizeBy: none
+		sourceColumn: [Calendar Quarter]
+
+	/// Quarter label, Q1 to Q4.
+	column Quarter
+		dataType: string
+		lineageTag: 6b62e85d-0668-5082-9ccb-33c492c633f5
+		summarizeBy: none
+		sourceColumn: [Quarter]
+		sortByColumn: 'Calendar Quarter'
+
+	/// Month number 1-12; sort key for Calendar Month Name.
 	column 'Calendar Month'
 		dataType: int64
 		isHidden
 		formatString: 0
-		lineageTag: 33a76e5e-ea6b-4a28-a6da-6388bff705bc
+		lineageTag: 87209ff5-f6c3-591a-8d2f-15695d4f41f6
 		summarizeBy: none
 		sourceColumn: [Calendar Month]
 
+	/// Full month name, e.g. January.
 	column 'Calendar Month Name'
 		dataType: string
-		lineageTag: e36ae433-cf81-4fd3-ae01-ffe9c39467f9
+		lineageTag: 7c349547-80ec-5194-91d6-88eee1aadd46
 		summarizeBy: none
 		sourceColumn: [Calendar Month Name]
 		sortByColumn: 'Calendar Month'
 
-	column 'Calendar Quarter'
-		dataType: int64
-		formatString: 0
-		lineageTag: f1925a5f-ce71-4a5f-a6d7-31a8d0988653
+	/// First day of the month; use it for monthly trend axes.
+	column 'Month Start'
+		dataType: dateTime
+		formatString: mmm yyyy
+		lineageTag: 815295af-4fdc-5f27-940a-1b77ff497676
 		summarizeBy: none
-		sourceColumn: [Calendar Quarter]
+		sourceColumn: [Month Start]
+
+	/// Year and month as text, e.g. 2024-01; sorted by Month Start.
+	column 'Year-Month'
+		dataType: string
+		lineageTag: aae1d65b-f5cd-517d-b94c-c9c448cfc2ec
+		summarizeBy: none
+		sourceColumn: [Year-Month]
+		sortByColumn: 'Month Start'
+
+	/// Monday of the week the date falls in.
+	column 'Week Start'
+		dataType: dateTime
+		formatString: yyyy-mm-dd
+		lineageTag: 13415df8-15c1-5e5b-966b-101bd9ded538
+		summarizeBy: none
+		sourceColumn: [Week Start]
+
+	/// Day of week 1-7, Monday = 1; sort key for Day of Week.
+	column 'Day of Week Number'
+		dataType: int64
+		isHidden
+		formatString: 0
+		lineageTag: d7f61988-53c8-5434-94ea-4c8d9db205fd
+		summarizeBy: none
+		sourceColumn: [Day of Week Number]
+
+	/// Day name, e.g. Monday; sorted Monday to Sunday.
+	column 'Day of Week'
+		dataType: string
+		lineageTag: 574f5635-017b-50a1-8b66-b2df7b481309
+		summarizeBy: none
+		sourceColumn: [Day of Week]
+		sortByColumn: 'Day of Week Number'
 
 	hierarchy 'Date Hierarchy'
-		lineageTag: 5b0a3fbb-1338-4b46-9c34-c19d0c442804
+		lineageTag: 3d67a23f-4f2b-5f60-9ec9-b3bb2e3d881b
 
 		level 'Calendar Year'
-			lineageTag: f0864d49-4eeb-4df6-8a14-d7f4e575a15c
+			lineageTag: 13f67590-6eae-5730-be8f-a33ec6c4beda
 			column: 'Calendar Year'
 
-		level 'Calendar Quarter'
-			lineageTag: f429b897-1b94-4ff6-aecc-886ed56e38f2
-			column: 'Calendar Quarter'
+		level Quarter
+			lineageTag: bb1fc02f-c2f2-54ff-b553-8bafbe59181d
+			column: Quarter
 
-		level 'Calendar Month'
-			lineageTag: 81483d0f-f03a-450b-b37f-48a63ea2a06b
-			column: 'Calendar Month'
+		level 'Calendar Month Name'
+			lineageTag: 5cc3391f-77d3-5567-986d-f2f3139af0d3
+			column: 'Calendar Month Name'
 
 		level Date
-			lineageTag: 860c6d1b-e1e2-467e-bce3-bc60b1212d28
+			lineageTag: 745c0e64-5202-5b4a-a1c8-7e9d7bde4950
 			column: Date
 
 	partition __Calendar = calculated
@@ -66,7 +121,13 @@ table __Calendar
 				ADDCOLUMNS (
 				    CALENDAR ( DATE ( 2024, 1, 1 ), DATE ( 2025, 12, 31 ) ),
 				    "Calendar Year", YEAR ( [Date] ),
+				    "Calendar Quarter", QUARTER ( [Date] ),
+				    "Quarter", "Q" & QUARTER ( [Date] ),
 				    "Calendar Month", MONTH ( [Date] ),
 				    "Calendar Month Name", FORMAT ( [Date], "MMMM" ),
-				    "Calendar Quarter", QUARTER ( [Date] )
+				    "Month Start", DATE ( YEAR ( [Date] ), MONTH ( [Date] ), 1 ),
+				    "Year-Month", FORMAT ( [Date], "yyyy-mm" ),
+				    "Week Start", [Date] - WEEKDAY ( [Date], 2 ) + 1,
+				    "Day of Week Number", WEEKDAY ( [Date], 2 ),
+				    "Day of Week", FORMAT ( [Date], "dddd" )
 				)

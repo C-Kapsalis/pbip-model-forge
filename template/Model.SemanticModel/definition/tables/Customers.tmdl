@@ -1,29 +1,33 @@
 /// One row per customer.
 table Customers
-	lineageTag: 82e8660a-a79d-4ee0-b1ef-b86210ac362a
+	lineageTag: a7942a60-9d05-5d5a-828f-3f227c8c7c4f
 
 	column customer_id
 		dataType: int64
 		isKey
-		lineageTag: cc877a45-7e7a-4119-b0dc-4fbf24ca297e
+		isHidden
+		lineageTag: 060ec7f1-f638-57bc-84bc-da0a8e8e2ee0
 		summarizeBy: none
 		sourceColumn: customer_id
 
+	/// Customer's trading name.
 	column customer_name
 		dataType: string
-		lineageTag: 84f47a56-81ce-48b7-aac6-c1aa2ed67702
+		lineageTag: 2414d194-941d-5746-915d-d868fae3cb12
 		summarizeBy: none
 		sourceColumn: customer_name
 
+	/// Customer size segment: Enterprise, Mid-Market or SMB.
 	column segment
 		dataType: string
-		lineageTag: 08944eb3-b393-4e09-bbd1-3f8cb87e2e29
+		lineageTag: 3d540f52-96cc-59f4-a099-398bd1c85341
 		summarizeBy: none
 		sourceColumn: segment
 
+	/// Country of the customer's billing address.
 	column country
 		dataType: string
-		lineageTag: 8687a2cd-30f3-4390-83bd-660add9d61cb
+		lineageTag: 3e6f5e5a-fb85-54c8-8e69-b98a12f0074c
 		summarizeBy: none
 		sourceColumn: country
 

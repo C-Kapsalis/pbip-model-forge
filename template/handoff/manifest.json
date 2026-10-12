@@ -1,0 +1,359 @@
+{
+  "generator": "pbip-model-forge 0.1.0",
+  "measures": [
+    {
+      "dependsOn": {
+        "columns": [],
+        "measures": [
+          "Orders #",
+          "Total Revenue"
+        ],
+        "tables": []
+      },
+      "description": "Average net revenue per order.",
+      "displayFolder": "Ratios",
+      "expression": "DIVIDE([Total Revenue], [Orders #])",
+      "format": "$ #,0.00",
+      "hidden": false,
+      "name": "Avg Order Value",
+      "table": "Key Measures"
+    },
+    {
+      "dependsOn": {
+        "columns": [
+          "Sales[order_id]"
+        ],
+        "measures": [],
+        "tables": [
+          "Sales"
+        ]
+      },
+      "description": "Number of distinct orders.",
+      "displayFolder": "Counts",
+      "expression": "DISTINCTCOUNT(Sales[order_id])",
+      "format": "#,0",
+      "hidden": false,
+      "name": "Orders #",
+      "table": "Key Measures"
+    },
+    {
+      "dependsOn": {
+        "columns": [
+          "Sales[net_amount]"
+        ],
+        "measures": [],
+        "tables": [
+          "Sales"
+        ]
+      },
+      "description": "Total net revenue across order lines.",
+      "displayFolder": "Base",
+      "expression": "SUM(Sales[net_amount])",
+      "format": "$ #,0.00",
+      "hidden": false,
+      "name": "Total Revenue",
+      "table": "Key Measures"
+    },
+    {
+      "dependsOn": {
+        "columns": [
+          "Sales[quantity]"
+        ],
+        "measures": [],
+        "tables": [
+          "Sales"
+        ]
+      },
+      "description": "Total units sold across order lines.",
+      "displayFolder": "Base",
+      "expression": "SUM(Sales[quantity])",
+      "format": "#,0",
+      "hidden": false,
+      "name": "Total Units",
+      "table": "Key Measures"
+    }
+  ],
+  "model": "Model",
+  "relationships": [
+    {
+      "active": true,
+      "crossFilter": "single",
+      "from": "Sales.customer_id",
+      "to": "Customers.customer_id"
+    },
+    {
+      "active": true,
+      "crossFilter": "single",
+      "from": "Sales.order_date",
+      "to": "__Calendar.Date"
+    },
+    {
+      "active": true,
+      "crossFilter": "single",
+      "from": "Sales.product_id",
+      "to": "Products.product_id"
+    },
+    {
+      "active": false,
+      "crossFilter": "single",
+      "from": "Sales.ship_date",
+      "to": "__Calendar.Date"
+    }
+  ],
+  "tables": [
+    {
+      "columns": [
+        {
+          "dataType": "dateTime",
+          "description": "One row per calendar day; the key every fact date joins to.",
+          "format": "Long Date",
+          "hidden": false,
+          "key": true,
+          "name": "Date"
+        },
+        {
+          "dataType": "int64",
+          "description": "Four-digit calendar year, e.g. 2024.",
+          "format": "0",
+          "hidden": false,
+          "key": false,
+          "name": "Calendar Year"
+        },
+        {
+          "dataType": "int64",
+          "description": "Quarter number 1-4; sort key for Quarter.",
+          "format": "0",
+          "hidden": true,
+          "key": false,
+          "name": "Calendar Quarter"
+        },
+        {
+          "dataType": "string",
+          "description": "Quarter label, Q1 to Q4.",
+          "format": "",
+          "hidden": false,
+          "key": false,
+          "name": "Quarter"
+        },
+        {
+          "dataType": "int64",
+          "description": "Month number 1-12; sort key for Calendar Month Name.",
+          "format": "0",
+          "hidden": true,
+          "key": false,
+          "name": "Calendar Month"
+        },
+        {
+          "dataType": "string",
+          "description": "Full month name, e.g. January.",
+          "format": "",
+          "hidden": false,
+          "key": false,
+          "name": "Calendar Month Name"
+        },
+        {
+          "dataType": "dateTime",
+          "description": "First day of the month; use it for monthly trend axes.",
+          "format": "mmm yyyy",
+          "hidden": false,
+          "key": false,
+          "name": "Month Start"
+        },
+        {
+          "dataType": "string",
+          "description": "Year and month as text, e.g. 2024-01; sorted by Month Start.",
+          "format": "",
+          "hidden": false,
+          "key": false,
+          "name": "Year-Month"
+        },
+        {
+          "dataType": "dateTime",
+          "description": "Monday of the week the date falls in.",
+          "format": "yyyy-mm-dd",
+          "hidden": false,
+          "key": false,
+          "name": "Week Start"
+        },
+        {
+          "dataType": "int64",
+          "description": "Day of week 1-7, Monday = 1; sort key for Day of Week.",
+          "format": "0",
+          "hidden": true,
+          "key": false,
+          "name": "Day of Week Number"
+        },
+        {
+          "dataType": "string",
+          "description": "Day name, e.g. Monday; sorted Monday to Sunday.",
+          "format": "",
+          "hidden": false,
+          "key": false,
+          "name": "Day of Week"
+        }
+      ],
+      "description": "Calculated date dimension.",
+      "hidden": false,
+      "name": "__Calendar",
+      "range": {
+        "end": "2025-12-31",
+        "start": "2024-01-01"
+      },
+      "role": "calendar"
+    },
+    {
+      "columns": [
+        {
+          "dataType": "int64",
+          "description": "",
+          "format": "",
+          "hidden": true,
+          "key": true,
+          "name": "customer_id"
+        },
+        {
+          "dataType": "string",
+          "description": "Customer's trading name.",
+          "format": "",
+          "hidden": false,
+          "key": false,
+          "name": "customer_name"
+        },
+        {
+          "dataType": "string",
+          "description": "Customer size segment: Enterprise, Mid-Market or SMB.",
+          "format": "",
+          "hidden": false,
+          "key": false,
+          "name": "segment"
+        },
+        {
+          "dataType": "string",
+          "description": "Country of the customer's billing address.",
+          "format": "",
+          "hidden": false,
+          "key": false,
+          "name": "country"
+        }
+      ],
+      "description": "One row per customer.",
+      "hidden": false,
+      "name": "Customers",
+      "role": "dimension",
+      "sample_rows": 5
+    },
+    {
+      "columns": [],
+      "description": "Measure home table: all user-facing measures live here.",
+      "hidden": false,
+      "name": "Key Measures",
+      "role": "measures"
+    },
+    {
+      "columns": [
+        {
+          "dataType": "int64",
+          "description": "",
+          "format": "",
+          "hidden": true,
+          "key": true,
+          "name": "product_id"
+        },
+        {
+          "dataType": "string",
+          "description": "Product or plan name.",
+          "format": "",
+          "hidden": false,
+          "key": false,
+          "name": "product_name"
+        },
+        {
+          "dataType": "string",
+          "description": "Product category: Subscriptions or Services.",
+          "format": "",
+          "hidden": false,
+          "key": false,
+          "name": "category"
+        },
+        {
+          "dataType": "double",
+          "description": "List price per unit, in USD.",
+          "format": "$ #,0.00",
+          "hidden": false,
+          "key": false,
+          "name": "unit_price"
+        }
+      ],
+      "description": "Product catalog.",
+      "hidden": false,
+      "name": "Products",
+      "role": "dimension",
+      "sample_rows": 4
+    },
+    {
+      "columns": [
+        {
+          "dataType": "int64",
+          "description": "",
+          "format": "",
+          "hidden": true,
+          "key": false,
+          "name": "order_id"
+        },
+        {
+          "dataType": "dateTime",
+          "description": "",
+          "format": "General Date",
+          "hidden": true,
+          "key": false,
+          "name": "order_date"
+        },
+        {
+          "dataType": "dateTime",
+          "description": "",
+          "format": "General Date",
+          "hidden": true,
+          "key": false,
+          "name": "ship_date"
+        },
+        {
+          "dataType": "int64",
+          "description": "",
+          "format": "",
+          "hidden": true,
+          "key": false,
+          "name": "customer_id"
+        },
+        {
+          "dataType": "int64",
+          "description": "",
+          "format": "",
+          "hidden": true,
+          "key": false,
+          "name": "product_id"
+        },
+        {
+          "dataType": "int64",
+          "description": "",
+          "format": "",
+          "hidden": true,
+          "key": false,
+          "name": "quantity"
+        },
+        {
+          "dataType": "double",
+          "description": "",
+          "format": "",
+          "hidden": true,
+          "key": false,
+          "name": "net_amount"
+        }
+      ],
+      "description": "One row per order line. Core fact table.",
+      "hidden": true,
+      "name": "Sales",
+      "role": "fact",
+      "sample_rows": 8
+    }
+  ]
+}
