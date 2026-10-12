@@ -222,7 +222,8 @@ own: `python tests/test_enter_data.py`.
 The tutorial, the how-to guides (getting started, building a line and
 clustered column chart, building a drill-down matrix), and the reference
 pages (the skills, the `pbip-forge check` rule catalog, the hand-off pack)
-are published at `pbip-model-forge-documentation` on Read the Docs.
+are published on Read the Docs at
+<https://pbip-model-forge-documentation.readthedocs.io/en/latest/>.
 
 ## Part of a small family of Power BI tools
 
