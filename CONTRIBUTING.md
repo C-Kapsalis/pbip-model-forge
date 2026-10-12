@@ -25,17 +25,17 @@ pip install -e ".[dev]"
 # 4. Install the REQUIRED external validator (see below) and confirm it's on PATH
 tmdl-preflight --version
 
-# 5. Build the template and validate it
+# 5. Build the template and run both gates
 python scripts/build_template.py
+pbip-forge check scripts/build_template.py --profile handoff   # 0 P0, 0 P1
 tmdl-preflight check template        # must report 0 errors
 
 # 6. Run the tests
-python -m pytest                     # or: python tests/test_enter_data.py
+python -m pytest
 ```
 
-The builder itself has **no pip dependencies**: it uses only `json`, `zlib`,
-`base64`, and `uuid` from the standard library. The `dev` extra installs
-`pytest`.
+The builder and checker have **no pip dependencies**: they use only the
+standard library. The `dev` extra installs `pytest`.
 
 ## Required external dependency: tmdl-preflight
 
@@ -58,11 +58,19 @@ src/pbip_model_forge/
   enter_data.py     compressed "entered data" encoder (byte-exact to Power BI)
                     + M source builders + TYPE_MAP
   build_model.py    build_pbip(spec, out_dir): renders the full PBIP artifact set
+                    with deterministic (uuid5) IDs
+  model_info.py     table roles, calendar columns, generator defaults; shared
+                    by the builder, the checker and the hand-off pack
+  check.py          pbip-forge check: the FM rule catalog and the checker
+  handoff.py        handoff/manifest.json + handoff/SPEC.md
   blank_report.py   the blank "spec, no visuals" report (.platform + definition.pbir)
-  cli.py            pbip-forge-template convenience CLI
-scripts/build_template.py   canonical worked-example spec -> template/
-template/                   the seed PBIP (generated; passes tmdl-preflight)
+  cli.py            pbip-forge (check, build, rules) and pbip-forge-template
+scripts/                    worked-example specs: template, hospital, vet clinic, physio
+template/                   the seed PBIP (generated; passes both gates)
 tests/test_enter_data.py    golden-value regression tests for the encoder
+tests/test_build.py         determinism, generator defaults, calendar, hand-off pack
+tests/test_check.py         one good spec, then one mutation per FM rule
+tests/specs.py              the tiny spec dicts the tests share
 .claude/skills/
   create-sample-model/      main skill: domain prompt -> validated PBIP spec
   validate-and-expand/      the expand-and-keep-valid loop
@@ -77,13 +85,17 @@ playbook, the entered-data encoding guide) lives in the separate
 1. A user prompt ("create a sample data model for X") triggers the
    **`create-sample-model`** skill, which invents a **spec dict** (tables,
    columns, sample rows, measures, relationships).
-2. **`build_model.build_pbip(spec, out_dir)`** renders every TMDL/JSON file the
+2. **`pbip-forge check`** judges the spec against the modeling rules: 0 P0
+   and 0 P1 means the model is correct enough to hand off.
+3. **`build_model.build_pbip(spec, out_dir)`** renders every TMDL/JSON file the
    artifact checklist (in `pbip-model-forge-documentation`) requires. It calls
    **`enter_data`** to encode row data as the compressed entered-data blob (so
    data loads with no external source and without tripping the composite-model
-   error), and **`blank_report`** to emit the blank report.
-3. **`tmdl-preflight check`** is the gate: 0 errors ⇒ structurally openable.
-4. The **`validate-and-expand`** skill grows an existing model by editing the
+   error), **`blank_report`** to emit the blank report, and **`handoff`** to
+   write the manifest and SPEC.md.
+4. **`tmdl-preflight check`** is the final gate: 0 errors ⇒ structurally
+   openable.
+5. The **`validate-and-expand`** skill grows an existing model by editing the
    spec and re-running the gate, never by hand-editing generated TMDL.
 
 The spec dict is always the source of truth; TMDL is regenerated, never
@@ -105,10 +117,20 @@ partition (M007); import tables get the `PBI_NavigationStepName` /
 `PBI_ResultType` annotations, calculated tables do not. Rebuild the template and
 run `tmdl-preflight check template`.
 
+### Add a check rule
+Add a `Rule(...)` to `_RULES` in `src/pbip_model_forge/check.py` with the next
+free `FM` id, a severity per profile (`mockup`, `handoff`), a rationale and a
+fix, then a `_rule_*` function that calls `ctx.add(...)` and an entry in
+`_CHECKS`. Add a test to `tests/test_check.py` that mutates `good_spec()` to
+trip it, confirm the four example specs still pass
+`pbip-forge check --profile handoff`, and document the rule on the rule
+catalog page in `pbip-model-forge-documentation`.
+
 ### Add or change a skill
 Skills live in `.claude/skills/<name>/SKILL.md` with YAML frontmatter (`name`,
 `description`). Keep the golden rule visible: never hand-author TMDL/base64;
-always go through `build_pbip`, and always gate on `tmdl-preflight`.
+always go through `build_pbip`, and always gate on `pbip-forge check`, then
+`tmdl-preflight`.
 
 ## Encoder integrity
 
@@ -122,18 +144,22 @@ you have broken openability). Do not "clean up" the raw-DEFLATE window-bits
 
 - Branch off `main`; keep PRs focused.
 - Use clear, imperative commit subjects (e.g. `Add currency column type`).
-- Every PR that touches generation must show `tmdl-preflight check` at 0 errors
+- Every PR that touches generation must show `pbip-forge check` at 0 P0/P1 and
+  `tmdl-preflight check` at 0 errors for the template and the example specs,
   and passing `pytest`.
+- Keep builds deterministic: never introduce random IDs or timestamps into
+  generated files (`test_build_twice_is_byte_identical` guards this).
 - Update the relevant guide in `pbip-model-forge-documentation` when behavior
   changes; if you touch the playbook invariants, update its artifact
   checklist page.
 
 ## Issues
 
-When filing a bug, include: the spec dict (or steps) that produced it, the full
-`tmdl-preflight check` output, your Python and tmdl-preflight versions, and, if
-a model won't open in Power BI Desktop, the exact Desktop error text. Feature
-requests: describe the domain/model shape you want to generate.
+When filing a bug, include: the spec dict (or steps) that produced it, the
+full `pbip-forge check` and `tmdl-preflight check` output, your Python,
+pbip-model-forge and tmdl-preflight versions, and, if a model won't open in
+Power BI Desktop, the exact Desktop error text. Feature requests: describe
+the domain/model shape you want to generate.
 
 ## License
 

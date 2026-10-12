@@ -1,5 +1,5 @@
 {
-  "generator": "pbip-model-forge 0.1.0",
+  "generator": "pbip-model-forge 1.1.0",
   "measures": [
     {
       "dependsOn": {
