@@ -18,10 +18,13 @@ created or has ``+ int(not ISEMPTY('<fact>'))`` terms added, and ``f-All``
 gets new gate lines at the end of each chain. Existing lines are never
 rewritten.
 
-The detection helpers (:func:`gate_literals`, :func:`category_gated`,
-:func:`resolve_f_measure`, :func:`declared_measures`,
-:func:`zmap_categories`, :func:`chain_span`, :func:`uncovered_facts`) are
-public so a linter can use the same definitions as the fixer.
+The detection helpers (:func:`live_gate_names`, :func:`category_gated`,
+:func:`find_gate_measure`, :func:`declared_measures`,
+:func:`map_table_categories`, :func:`chain_span`, :func:`uncovered_facts`)
+are public so a linter can use the same definitions as the fixer.
+
+Edits keep the file's bytes: line endings (LF or CRLF) and a UTF-8 BOM
+survive, and the backup is a byte copy of the file before the edit.
 """
 
 from __future__ import annotations
@@ -44,7 +47,7 @@ DISPLAY_FOLDER = "Visual-Level filters"
 INLINE_LIMIT = 100
 
 _HELPER_PREFIXES = ("x-", "y-", "z-", "f-", "i-", "__")
-_GATE_LITERAL_RE = re.compile(r'CONTAINSSTRING\s*\(\s*all_cats\s*,\s*"([^"]*)"\s*\)', re.I)
+_GATE_LITERAL_RE = re.compile(r'CONTAINSSTRING\s*\(\s*all_cats\s*,\s*"((?:[^"]|"")*)"\s*\)', re.I)
 _SHAPE_WARNING = ("non-standard f- measure shapes (an aggregator, a SWITCH router or a "
                   "display-string measure) may now be broken; review every extended measure")
 
@@ -57,16 +60,16 @@ def _is_comment(line: str) -> bool:
     return s.startswith("//") or s.startswith("--")
 
 
-def gate_literals(text: str) -> list[str]:
-    """Every ``CONTAINSSTRING(all_cats, "<literal>")`` literal on a live line.
-
-    Lines whose first non-blank characters are ``//`` or ``--`` are skipped.
-    Order of first appearance; duplicates dropped."""
+def live_gate_names(text: str) -> list[str]:
+    """The category text of every ``CONTAINSSTRING(all_cats, "...")`` test on
+    a line that is not commented out (``//`` or ``--`` first), unescaped
+    (``""`` read as ``"``), in order of first appearance, without repeats."""
     seen: list[str] = []
     for line in text.split("\n"):
         if _is_comment(line):
             continue
-        for lit in _GATE_LITERAL_RE.findall(line):
+        for found in _GATE_LITERAL_RE.findall(line):
+            lit = found.replace('""', '"')
             if lit not in seen:
                 seen.append(lit)
     return seen
@@ -77,7 +80,7 @@ def category_gated(category: str, literals: list[str]) -> bool:
     return any(lit and lit in category for lit in literals)
 
 
-def resolve_f_measure(category: str, declared: set[str] | list[str]) -> str | None:
+def find_gate_measure(category: str, declared: set[str] | list[str]) -> str | None:
     """The f- measure that stands for ``category``, trying in turn
     ``f-<cat>``, ``f-<cat with spaces as _>`` and ``f-<cat without spaces>``."""
     words = category.split(" ")
@@ -91,20 +94,27 @@ def declared_measures(text: str) -> set[str]:
     return set(tt.declared_measure_names(text))
 
 
-def chain_span(lines: list[str], var: str) -> tuple[int, int] | None:
-    """``(first, last)`` line indices of one ``VAR <var> =`` chain.
+def var_lines(lines: list[str], var: str, lo: int = 0, hi: int | None = None) -> list[int]:
+    """Indices of the ``VAR <var> =`` lines between ``lo`` and ``hi``."""
+    hi = len(lines) if hi is None else hi
+    pat = re.compile(rf"^\s*VAR\s+{re.escape(var)}\s*=")
+    return [i for i in range(lo, hi) if pat.match(lines[i])]
+
+
+def chain_span(lines: list[str], var: str, lo: int = 0,
+               hi: int | None = None) -> tuple[int, int] | None:
+    """``(first, last)`` line indices of one ``VAR <var> =`` chain, looked
+    for between line ``lo`` and line ``hi`` (default: the whole list).
 
     The chain ends at the last non-blank line before the next ``VAR`` or
     ``RETURN`` (or the closing fence)."""
-    start = None
-    for i, line in enumerate(lines):
-        if re.match(rf"^\s*VAR\s+{re.escape(var)}\s*=", line):
-            start = i
-            break
-    if start is None:
+    hi = len(lines) if hi is None else hi
+    found = var_lines(lines, var, lo, hi)
+    if not found:
         return None
+    start = found[0]
     last = start
-    for j in range(start + 1, len(lines)):
+    for j in range(start + 1, hi):
         s = lines[j].strip()
         if re.match(r"^(VAR|RETURN)\b", s) or s == "```" or (lines[j] and not lines[j].startswith("\t\t")):
             break
@@ -141,7 +151,7 @@ def map_rows(model_dir: str | Path) -> tuple[list[list], int, int]:
     return clean, cat, group
 
 
-def zmap_categories(model_dir: str | Path) -> list[str]:
+def map_table_categories(model_dir: str | Path) -> list[str]:
     """Distinct analysis categories in the first z-Map table ([] on failure)."""
     rows, cat, _ = map_rows(model_dir)
     out: list[str] = []
@@ -282,11 +292,56 @@ def _term(table: str) -> str:
     return f"int(not ISEMPTY({repr_table(table)}))"
 
 
+def dax_string(text: str) -> str:
+    """A DAX string literal: ``"`` doubles inside the quotes."""
+    return '"' + text.replace('"', '""') + '"'
+
+
+def dax_measure_ref(name: str) -> str:
+    """A DAX measure reference: ``]`` doubles inside the brackets."""
+    return "[" + name.replace("]", "]]") + "]"
+
+
 def gate_line(category: str, measure: str, chain: str) -> str:
     """The gate line appended to ``temp_basic`` (``basic``) or ``temp_alt``."""
     op, default = ("&&", "TRUE()") if chain == "basic" else ("||", "FALSE()")
-    return (f'{op} IF(CONTAINSSTRING(all_cats, "{category}"), '
-            f"IF([{measure}] > 0, TRUE(), FALSE()), {default})")
+    return (f"{op} IF(CONTAINSSTRING(all_cats, {dax_string(category)}), "
+            f"IF({dax_measure_ref(measure)} > 0, TRUE(), FALSE()), {default})")
+
+
+def _code_end(line: str) -> int:
+    """Where a trailing ``//`` or ``--`` comment starts on a DAX line (the
+    line's length when there is none). Text inside ``"..."`` strings and
+    ``'...'`` or ``[...]`` names is not a comment."""
+    pos, size = 0, len(line)
+    while pos < size:
+        ch = line[pos]
+        if ch in "\"'[":
+            close = "]" if ch == "[" else ch
+            pos += 1
+            while pos < size:
+                if line[pos] == close:
+                    if line[pos + 1:pos + 2] == close:   # doubled: escaped
+                        pos += 2
+                        continue
+                    break
+                pos += 1
+        elif line.startswith(("//", "--"), pos):
+            return pos
+        pos += 1
+    return size
+
+
+def _has_code(line: str) -> bool:
+    return bool(tt.strip_comments_and_strings(line).strip())
+
+
+def _append_terms(line: str, terms: str) -> str:
+    """``line`` with ``terms`` added after its code, before any trailing
+    line comment, so the comment cannot swallow them."""
+    cut = _code_end(line)
+    code, comment = line[:cut].rstrip(), line[cut:]
+    return code + terms + (" " + comment if comment else "")
 
 
 def _chain_indent(lines: list[str], span: tuple[int, int]) -> str:
@@ -346,7 +401,7 @@ class Result:
     created: dict[str, list[str]] = field(default_factory=dict)
     extended: dict[str, list[str]] = field(default_factory=dict)
     skipped: list[tuple[str, str]] = field(default_factory=list)
-    f_all_extended: list[str] = field(default_factory=list)
+    combined_gates_added: list[str] = field(default_factory=list)
     already_gated: list[str] = field(default_factory=list)
     coverage_gates: list[tuple[str, str]] = field(default_factory=list)
     unresolved: list[str] = field(default_factory=list)
@@ -368,7 +423,8 @@ def fill_gaps(model_dir: str | Path, dry_run: bool = False, backups: bool = True
         res.ok, res.error = False, f"{gate_file.name} not found in {tables_dir}"
         return res
 
-    original = gate_file.read_text(encoding="utf-8")
+    source = tt.read_source(gate_file)
+    original = source.text
     lines = tt.split_lines(original)
     declared = declared_measures(original)
 
@@ -382,7 +438,7 @@ def fill_gaps(model_dir: str | Path, dry_run: bool = False, backups: bool = True
     # 1. extend existing measures (line contents change, line count does not)
     to_create: list[tuple[str, str, list[str]]] = []
     for cat, facts in plan.items():
-        name = resolve_f_measure(cat, declared)
+        name = find_gate_measure(cat, declared)
         if name is None:
             to_create.append((cat, f"f-{cat}", facts))
             continue
@@ -391,39 +447,52 @@ def fill_gaps(model_dir: str | Path, dry_run: bool = False, backups: bool = True
         new = [f for f in facts if f not in have]
         if not new:
             continue
-        expr_idx = [k for k in block.expr_lines if lines[k].strip()]
-        target = expr_idx[-1] if expr_idx else block.start
-        lines[target] = lines[target].rstrip() + "".join(f" + {_term(f)}" for f in new)
+        code_idx = [k for k in block.expr_lines if _has_code(lines[k])]
+        target = code_idx[-1] if code_idx else block.start
+        lines[target] = _append_terms(lines[target], "".join(f" + {_term(f)}" for f in new))
         res.extended[name] = new
     for cat, name, facts in to_create:
         res.created[name] = facts
         declared.add(name)
 
-    # 2. f-All gate lines (append only, both chains)
-    basic = chain_span(lines, "temp_basic")
-    alt = chain_span(lines, "temp_alt")
-    if basic is None or alt is None:
-        if to_create or zmap_categories(model_dir):
+    # 2. f-All gate lines (append only, both chains, inside f-All only)
+    def combined_range() -> tuple[int, int] | None:
+        block = next((b for b in tt.measure_blocks(lines) if b.name == COMBINED_MEASURE), None)
+        return (block.start, block.end) if block else None
+
+    rng = combined_range()
+    dupes = [v for v in ("temp_basic", "temp_alt")
+             if rng and len(var_lines(lines, v, *rng)) > 1]
+    basic = chain_span(lines, "temp_basic", *rng) if rng else None
+    alt = chain_span(lines, "temp_alt", *rng) if rng else None
+    wants_gates = bool(to_create or map_table_categories(model_dir))
+    if dupes:
+        if wants_gates:
+            res.warnings.append(f"{COMBINED_MEASURE} declares {' and '.join(dupes)} more than "
+                                "once; which chain to extend is ambiguous, no gate lines written")
+    elif basic is None or alt is None:
+        if wants_gates:
             res.warnings.append(f"{COMBINED_MEASURE} has no temp_basic/temp_alt chain pair; "
                                 "no gate lines written")
     else:
-        literals = gate_literals("\n".join(lines))
+        literals = live_gate_names("\n".join(lines[rng[0]:rng[1]]))
         created_cats = [c for c, _, _ in to_create]
-        wanted = created_cats + [c for c in zmap_categories(model_dir) if c not in created_cats]
+        wanted = created_cats + [c for c in map_table_categories(model_dir)
+                                 if c not in created_cats]
         for cat in wanted:
             if category_gated(cat, literals):
                 res.already_gated.append(cat)
                 continue
-            measure = resolve_f_measure(cat, declared)
+            measure = find_gate_measure(cat, declared)
             if measure is None:
                 res.unresolved.append(cat)
                 continue
             for var, chain in (("temp_basic", "basic"), ("temp_alt", "alt")):
-                span = chain_span(lines, var)
+                span = chain_span(lines, var, *combined_range())
                 lines.insert(span[1] + 1, _chain_indent(lines, span) + gate_line(cat, measure, chain))
             literals.append(cat)
             if cat in created_cats:
-                res.f_all_extended.append(cat)
+                res.combined_gates_added.append(cat)
             else:
                 res.coverage_gates.append((cat, measure))
 
@@ -440,8 +509,7 @@ def fill_gaps(model_dir: str | Path, dry_run: bool = False, backups: bool = True
         if backups:
             stamp = _dt.datetime.now().strftime("%Y%m%d-%H%M%S")
             res.backup = gate_file.with_name(f"{gate_file.name}.{stamp}.bak")
-            res.backup.write_text(original, encoding="utf-8")
-        gate_file.write_text(updated, encoding="utf-8")
+        tt.write_edit(source, updated, backup=res.backup)
     return res
 
 
@@ -456,7 +524,7 @@ def _report(res: Result, dry_run: bool) -> None:
         print(f"  extended {name} <- {', '.join(facts)}")
     for fact, why in res.skipped:
         print(f"  skipped  {fact}: {why}")
-    for cat in res.f_all_extended:
+    for cat in res.combined_gates_added:
         print(f"  {COMBINED_MEASURE} extended for created category {cat}")
     for cat, measure in res.coverage_gates:
         print(f"  coverage gate added: {cat} -> [{measure}]")

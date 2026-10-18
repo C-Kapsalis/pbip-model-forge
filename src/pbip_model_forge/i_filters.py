@@ -5,7 +5,8 @@ that lists every dimension filter currently applied, one line per filtered
 column, for a caption or tooltip. It goes stale as soon as a new dimension is
 offered in a y- selector table. This module rebuilds it from the selector
 tables, so every offered dimension is covered, validates the result, and
-replaces the measure's expression in place (properties are kept).
+replaces the measure's expression in place (properties are kept). The
+file's line endings and a UTF-8 BOM are kept; the backup is a byte copy.
 
 Each dimension block reads, in DAX::
 
@@ -154,16 +155,23 @@ def _block(dim: Dimension, opts: Options) -> str:
     ])
 
 
+#: FORMAT pattern of the dates in the period line, e.g. "3 Feb 2025"
+DATE_FORMAT = "d mmm yyyy"
+
+
 def _date_block(opts: Options) -> str:
+    """One "Period: <first> - <last>" line (a single date when the range is
+    one day) while the calendar column is filtered."""
     col = opts.date_column
+    first, last = (f'FORMAT({v}, "{DATE_FORMAT}")' for v in ("__first", "__last"))
+    brk = '"<br/>"' if opts.output == "html" else "UNICHAR(13) & UNICHAR(10)"
     return "\n".join([
         "IF(",
         f"    ISFILTERED({col}),",
-        f"    VAR __from = MIN({col})",
-        f"    VAR __to = MAX({col})",
-        '    RETURN "Date = " & IF(__from = __to, FORMAT(__from, "yyyy-mm-dd"),'
-        ' FORMAT(__from, "yyyy-mm-dd") & " to " & FORMAT(__to, "yyyy-mm-dd"))'
-        " & UNICHAR(13) & UNICHAR(10)",
+        f"    VAR __first = MIN({col})",
+        f"    VAR __last = MAX({col})",
+        f'    RETURN "Period: " & IF(__first = __last, {first}, {first} & " - " & {last})'
+        f" & {brk}",
         ")",
     ])
 
@@ -289,7 +297,8 @@ def update_caption(model_dir: str | Path, dry_run: bool = False, backups: bool =
             reasons = list(verdict.errors) or [f"coverage {verdict.coverage_percent}%"]
             res.failed.append((CAPTION_MEASURE, "validation failed: " + "; ".join(reasons)))
             return res
-    original = host.read_text(encoding="utf-8")
+    source = tt.read_source(host)
+    original = source.text
     updated = replace_expression(original, CAPTION_MEASURE, expr)
     if updated is None:
         res.failed.append((CAPTION_MEASURE, f"measure not found in {host.name}"))
@@ -300,8 +309,7 @@ def update_caption(model_dir: str | Path, dry_run: bool = False, backups: bool =
             if backups:
                 stamp = _dt.datetime.now().strftime("%Y%m%d-%H%M%S")
                 res.backup = host.with_name(f"{host.name}.{stamp}.bak")
-                res.backup.write_text(original, encoding="utf-8")
-            host.write_text(updated, encoding="utf-8")
+            tt.write_edit(source, updated, backup=res.backup)
     return res
 
 

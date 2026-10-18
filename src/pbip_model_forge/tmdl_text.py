@@ -14,6 +14,7 @@ more tabs below the declaration.
 
 from __future__ import annotations
 
+import difflib
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -58,6 +59,71 @@ class MeasureBlock:
 
 def split_lines(text: str) -> list[str]:
     return text.split("\n")
+
+
+# ---------------------------------------------------------------------------
+# Byte-faithful reading and writing
+# ---------------------------------------------------------------------------
+@dataclass
+class SourceFile:
+    """A table file as read from disk: its exact bytes and an LF-only text
+    view that the line-based editors work on."""
+
+    path: Path
+    raw: bytes
+
+    @property
+    def text(self) -> str:
+        return self.raw.decode("utf-8").replace("\r\n", "\n")
+
+
+def read_source(path: str | Path) -> SourceFile:
+    path = Path(path)
+    return SourceFile(path, path.read_bytes())
+
+
+def _line_endings(raw_text: str) -> list[str]:
+    """The terminator of every line of ``raw_text`` ("\r\n", "\n" or "" for
+    an unterminated last line), aligned with ``text.split("\n")``."""
+    ends = []
+    for piece in raw_text.split("\n")[:-1]:
+        ends.append("\r\n" if piece.endswith("\r") else "\n")
+    ends.append("")
+    return ends
+
+
+def restore_line_endings(raw: bytes, edited: str) -> bytes:
+    """Encode ``edited`` (LF-only text derived from ``raw``) with ``raw``'s
+    line endings.
+
+    Lines that the edit kept are written with the terminator they had;
+    inserted or changed lines take the file's prevailing terminator (CRLF
+    when most lines of the original end that way). A file that was all LF
+    or all CRLF therefore stays exactly that, and every byte outside the
+    edit is unchanged."""
+    raw_text = raw.decode("utf-8")
+    old_lines = raw_text.replace("\r\n", "\n").split("\n")
+    old_ends = _line_endings(raw_text)
+    crlf = sum(e == "\r\n" for e in old_ends)
+    lf = sum(e == "\n" for e in old_ends)
+    usual = "\r\n" if crlf > lf else "\n"
+    new_lines = edited.split("\n")
+    new_ends = [usual] * (len(new_lines) - 1) + [""]
+    matcher = difflib.SequenceMatcher(None, old_lines, new_lines, autojunk=False)
+    for tag, i1, i2, j1, _ in matcher.get_opcodes():
+        if tag == "equal":
+            for k in range(i2 - i1):
+                if j1 + k < len(new_lines) - 1:
+                    new_ends[j1 + k] = old_ends[i1 + k] or usual
+    return "".join(ln + end for ln, end in zip(new_lines, new_ends)).encode("utf-8")
+
+
+def write_edit(source: SourceFile, edited: str, backup: Path | None = None) -> None:
+    """Write ``edited`` over ``source.path`` keeping its line endings; when
+    ``backup`` is given, first copy the original bytes there unchanged."""
+    if backup is not None:
+        backup.write_bytes(source.raw)
+    source.path.write_bytes(restore_line_endings(source.raw, edited))
 
 
 def measure_blocks(lines: list[str]) -> list[MeasureBlock]:

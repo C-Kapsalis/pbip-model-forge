@@ -87,7 +87,9 @@ def test_case5_corrupt_base64_returns_nothing_and_one_error_line(capsys):
     assert len(lines) == 1, lines
 
     run = forge("table", "dump", "--b64", "@@@not base64@@@")
-    assert not re.search(r"^\s*1\b", run.out, re.M), run.out
+    assert run.code == 1, run.text
+    assert run.out == ""
+    assert len(run.err.strip().splitlines()) == 1, run.err
 
 
 # -- case 6 ----------------------------------------------------------------------
@@ -102,9 +104,9 @@ def test_case6_dump_shows_first_twenty_of_twenty_five(tmp_path):
     run = forge("table", "dump", _dump_rows(25, tmp_path))
     assert run.code == 0, run.text
     assert "Shop" in run.out and "Region" in run.out
-    assert re.search(r"\b25\b", run.out)
+    assert "Data rows: 25\n" in run.out
     assert "shop20" in run.out and "shop21" not in run.out
-    assert re.search(r"\b5\b", run.out)
+    assert run.out.splitlines()[-1] == "... 5 more rows not shown (use --max-rows)"
     assert re.search(r"^\s*1\b.*shop01", run.out, re.M)   # 1-based numbering
 
 
@@ -112,7 +114,7 @@ def test_case6_max_rows_option(tmp_path):
     run = forge("table", "dump", _dump_rows(25, tmp_path), "--max-rows", "3")
     assert run.code == 0, run.text
     assert "shop03" in run.out and "shop04" not in run.out
-    assert re.search(r"\b22\b", run.out)
+    assert run.out.splitlines()[-1] == "... 22 more rows not shown (use --max-rows)"
 
 
 # -- case 7 ----------------------------------------------------------------------
