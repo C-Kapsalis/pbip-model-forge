@@ -163,9 +163,14 @@ pbip-model-forge/
 │  ├─ handoff.py                 ← the hand-off pack (manifest.json + SPEC.md)
 │  ├─ model_info.py              ← table roles, calendar columns, generator defaults
 │  ├─ blank_report.py            ← the blank "spec, no visuals" report
-│  └─ cli.py                     ← pbip-forge (check, build, rules) + pbip-forge-template
+│  ├─ report_scaffold.py         ← report blank --full, clone-report, report integrity check
+│  ├─ f_filters.py               ← f-filters: f-<Category> measures and f-All gates
+│  ├─ i_filters.py               ← i-filters: the i-Applied Filters caption
+│  ├─ tmdl_text.py               ← line-based TMDL readers shared by the editing commands
+│  └─ cli.py                     ← pbip-forge (check, build, rules, ...) + pbip-forge-template
 ├─ scripts/                      ← worked example specs: template, hospital, vet clinic, physio
-├─ tests/                        ← encoder golden bytes, builder and checker tests
+├─ docs/model-commands.md       ← commands for existing PBIP projects
+├─ tests/                        ← encoder golden bytes, builder, checker and command tests
 └─ .claude/skills/
    ├─ create-sample-model/       ← main skill: domain → validated PBIP spec
    └─ validate-and-expand/       ← expand-and-keep-valid loop
@@ -206,6 +211,23 @@ Severities are P0 (broken or wrong numbers), P1 (fix before hand-off) and P2
 `handoff` profile makes them P1. A model is done when the check reports 0 P0
 and 0 P1 and `tmdl-preflight check` reports 0 errors. Both skills run the two
 gates in that order.
+
+## Working with an existing project
+
+A few commands work on a PBIP project rather than on a spec. They are
+described in [docs/model-commands.md](docs/model-commands.md):
+
+```powershell
+pbip-forge table dump "Model.SemanticModel/definition/tables/Map.tmdl"   # read an entered-data table
+pbip-forge report blank --client clients/acme --model Sales --full     # full PBIR blank report
+pbip-forge clone-report Template.Report Acme --model Acme.SemanticModel
+pbip-forge f-filters --model Acme.SemanticModel --dry-run             # f-<Category> and f-All gaps
+pbip-forge i-filters --model Acme.SemanticModel --dry-run             # i-Applied Filters caption
+```
+
+`f-filters` and `i-filters` edit files: run them with `--dry-run` first, in
+a git repository or on a copy. They keep a timestamped `.bak` of the file
+they change unless `--no-backups` is given.
 
 ## Tests
 

@@ -1,5 +1,64 @@
 # Release notes
 
+## Unreleased
+
+Commands for projects that already exist, next to the spec-based `check`
+and `build`. See [docs/model-commands.md](docs/model-commands.md).
+
+### Added
+
+- **`pbip-forge table dump FILE | --b64 STRING [--max-rows N]`** prints the
+  rows of an encoded "Enter data" table: column names (row 0), the data-row
+  count, the first 20 rows numbered from 1 and how many were left out. Only
+  the file's first payload is read and the file is never written. A corrupt
+  payload prints one error line and exits 1.
+- **Codec additions** in `enter_data`: `decode_file(path)` (first payload;
+  `ValueError("no encoded payload in <file>")` when there is none),
+  `decode_b64_or_none(b64)` (None plus one error line instead of an
+  exception) and `encode_rows(rows, parity_json=True)` (cells kept as they
+  are, standard JSON spacing, ASCII escaping). The default encoding is
+  unchanged.
+- **`pbip-forge report blank --client DIR --model NAME... [--full]`** creates
+  a report bound to an existing model. `--full` writes the complete PBIR
+  definition (report.json, version.json, one page, localSettings) that Fabric
+  Git sync and deployment pipelines need; the default stays the two-file
+  form. Existing reports are never overwritten; missing models are skipped
+  with a warning. `--theme`/`--theme-file` set and copy the base theme
+  (default name `CY25SU11`).
+- **`pbip-forge clone-report TEMPLATE NAME [--model PATH]`** copies a report
+  with a new `logicalId` and display name and points it at another model
+  through a relative path. Exit 1 when the target exists without `--force`,
+  2 for a missing template or one without `.platform`. No backup files.
+- **Report integrity check** after `report blank` and `clone-report`: the
+  dataset reference resolves, every page in `pages.json` has a parseable
+  `page.json`, `activePageName` is listed. With tmdl-preflight installed,
+  `clone-report` also prints its B004 findings for the copy. `--strict`
+  makes problems exit 1.
+- **`pbip-forge f-filters --model M`** creates missing `f-<Category>` gate
+  measures, appends uncovered fact tables to existing ones (with a loud
+  warning on stdout and stderr), and appends paired `temp_basic`/`temp_alt`
+  gate lines to `f-All` for every created or z-Map category that no live
+  literal gates. Append-only, idempotent, `--dry-run`, timestamped backup
+  unless `--no-backups`; a model without `f-Filters.tmdl` exits 1. The
+  detection helpers are public in `pbip_model_forge.f_filters`.
+- **`pbip-forge i-filters --model M`** regenerates `i-Applied Filters` in
+  `Helper Measures` from the y- selector tables, validates coverage before
+  writing (`--skip-validation` to override) and replaces only the measure's
+  expression. Exit 1 when the measure is missing or validation fails.
+- Tests for all of the above (50 new tests, fictional fixtures).
+
+### Notes
+
+- A created `f-<Category>` measure is placed after the table's last measure
+  (so still before the trailing table annotations), which keeps measures
+  together; on a table with no measure it goes before the trailing
+  annotations.
+- Fact tables for `f-filters` are the loaded data tables (not calculated,
+  not x-/y-/z-/f-/i-/`__` helpers) that are not only on the one side of
+  relationships.
+- Only the bare `i-Applied Filters` measure is generated; older notes that
+  mention four caption variants are out of date.
+
 ## 1.1.0 (2026-10-12): Born compliant
 
 Generated models now follow modeling best practice by construction, and a
