@@ -24,28 +24,47 @@ and `build`. See [docs/model-commands.md](docs/model-commands.md).
   Git sync and deployment pipelines need; the default stays the two-file
   form. Existing reports are never overwritten; missing models are skipped
   with a warning. `--theme`/`--theme-file` set and copy the base theme
-  (default name `CY25SU11`).
+  (default name `CY25SU12`, the December 2025 built-in theme). An error of
+  any kind while writing one report is printed, fails that report and the
+  other models are still processed.
 - **`pbip-forge clone-report TEMPLATE NAME [--model PATH]`** copies a report
   with a new `logicalId` and display name and points it at another model
-  through a relative path. Exit 1 when the target exists without `--force`,
-  2 for a missing template or one without `.platform`. No backup files.
+  through a relative path. A relative `--model` is read from the new
+  report folder (`--model ../Roastery.SemanticModel`) and must name an
+  existing `*.SemanticModel` folder. Exit 1 when the target exists without
+  `--force` or is a file; 2 for a missing template or one without
+  `.platform`, an `--out-dir` inside the template, a bad `--model` or a
+  `--logical-id` that is not a UUID. Nothing is written on an error. No
+  backup files.
 - **Report integrity check** after `report blank` and `clone-report`: the
   dataset reference resolves, every page in `pages.json` has a parseable
   `page.json`, `activePageName` is listed. With tmdl-preflight installed,
-  `clone-report` also prints its B004 findings for the copy. `--strict`
-  makes problems exit 1.
+  `clone-report` also prints its B004 findings for files inside the copy's
+  own folder (a sibling such as `MyShop.Report` never counts against
+  `Shop.Report`). `--strict` makes problems exit 1.
 - **`pbip-forge f-filters --model M`** creates missing `f-<Category>` gate
   measures, appends uncovered fact tables to existing ones (with a loud
   warning on stdout and stderr), and appends paired `temp_basic`/`temp_alt`
   gate lines to `f-All` for every created or z-Map category that no live
   literal gates. Append-only, idempotent, `--dry-run`, timestamped backup
-  unless `--no-backups`; a model without `f-Filters.tmdl` exits 1. The
-  detection helpers are public in `pbip_model_forge.f_filters`.
+  unless `--no-backups`; a model without `f-Filters.tmdl` exits 1. Gate
+  lines go only into `f-All`'s chains (a chain variable declared twice
+  there writes nothing, with a warning). Terms added to a measure whose
+  last line ends in a `//` or `--` comment go before the comment. `"` in a
+  category and `]` in a measure name are escaped in the written DAX. The
+  detection helpers are public in `pbip_model_forge.f_filters`
+  (`live_gate_names`, `find_gate_measure`, `map_table_categories`, ...).
 - **`pbip-forge i-filters --model M`** regenerates `i-Applied Filters` in
   `Helper Measures` from the y- selector tables, validates coverage before
   writing (`--skip-validation` to override) and replaces only the measure's
-  expression. Exit 1 when the measure is missing or validation fails.
-- Tests for all of the above (50 new tests, fictional fixtures).
+  expression. Exit 1 when the measure is missing or validation fails. The
+  optional date block reads `Period: 3 Feb 2025 - 28 Feb 2025`.
+- Both editing commands keep each file's bytes outside the edit: line
+  endings (LF or CRLF, on every OS) and a UTF-8 BOM. The `*.bak` backup is
+  a byte copy of the file before the edit.
+- Tests for all of the above (fictional fixtures). With tmdl-preflight
+  installed (`uv run --group test pytest`) its integration tests run too;
+  without it they skip.
 
 ### Notes
 
