@@ -5,6 +5,7 @@
     pbip-forge check SPEC [--profile mockup|handoff] [--format text|json]
     pbip-forge build SPEC OUT_DIR [--check] [--profile ...] [--no-handoff]
     pbip-forge rules
+    pbip-forge table dump FILE.tmdl | --b64 STRING [--max-rows N]
 
 SPEC is either a JSON file holding the spec dict, or a Python file that
 defines a module-level ``SPEC`` dict (like ``scripts/build_hospital.py``).
@@ -72,10 +73,14 @@ def forge_main(argv: list[str] | None = None) -> int:
 
     sub.add_parser("rules", help="list the rule catalog")
 
+    _add_model_commands(sub)
+
     args = parser.parse_args(argv)
     if args.command == "rules":
         sys.stdout.write(format_rules())
         return 0
+    if args.command in _MODEL_COMMANDS:
+        return _MODEL_COMMANDS[args.command](args)
 
     spec = load_spec(args.spec)
     if args.command == "check":
@@ -95,6 +100,40 @@ def forge_main(argv: list[str] | None = None) -> int:
         return 1
     print(f"Built PBIP: {pbip}")
     return 0
+
+
+def _add_model_commands(sub: Any) -> None:
+    """Subcommands that read or edit an existing PBIP (not a spec)."""
+    p_table = sub.add_parser("table", help="entered-data table tools")
+    table_sub = p_table.add_subparsers(dest="table_command", required=True)
+    p_dump = table_sub.add_parser("dump", help="print the rows of an encoded entered-data table")
+    src = p_dump.add_mutually_exclusive_group(required=True)
+    src.add_argument("file", nargs="?", help="TMDL file; its first Binary.FromText payload is read")
+    src.add_argument("--b64", help="a bare base64 payload instead of a file")
+    p_dump.add_argument("--max-rows", type=int, default=20,
+                        help="data rows to print (default 20)")
+
+
+def _cmd_table(args: argparse.Namespace) -> int:
+    from . import enter_data
+
+    if args.b64 is not None:
+        rows = enter_data.decode_b64_or_none(args.b64)
+    else:
+        try:
+            rows = enter_data.decode_file(args.file)
+        except (OSError, ValueError) as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+    if rows is None:
+        return 1
+    sys.stdout.write(enter_data.format_dump(rows, args.max_rows))
+    return 0
+
+
+_MODEL_COMMANDS = {
+    "table": _cmd_table,
+}
 
 
 def main(argv: list[str] | None = None) -> int:
