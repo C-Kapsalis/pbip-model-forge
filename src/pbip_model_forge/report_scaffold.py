@@ -38,8 +38,8 @@ PAGES_SCHEMA = f"{_SCHEMA}/item/report/definition/pagesMetadata/1.0.0/schema.jso
 PAGE_SCHEMA = f"{_SCHEMA}/item/report/definition/page/2.0.0/schema.json"
 LOCAL_SCHEMA = f"{_SCHEMA}/item/report/localSettings/1.0.0/schema.json"
 
-#: Built-in Power BI base theme referenced by new reports (late-2025 release).
-DEFAULT_THEME = "CY25SU11"
+#: Built-in Power BI base theme referenced by new reports (December 2025 release).
+DEFAULT_THEME = "CY25SU12"
 
 _SUBDIRS = (
     "definition/pages",
@@ -183,8 +183,8 @@ def blank_reports_cli(args: argparse.Namespace) -> int:
                 write_full_blank_report(client, report_name, model, theme, theme_src)
             else:
                 write_blank_report(client, report_name, model_name=model)
-        except OSError as exc:
-            print(f"error: {report_dir}: {exc}")
+        except Exception as exc:  # one bad model must not stop the others
+            print(f"error: {report_dir}: {type(exc).__name__}: {exc}")
             failed += 1
             continue
         print(f"created {report_dir}")
@@ -224,6 +224,14 @@ def _rewrite_json(path: Path, edit) -> None:
     path.write_bytes((prefix + out).encode("utf-8"))
 
 
+def _is_within(path: Path, root: Path) -> bool:
+    try:
+        path.relative_to(root)
+    except ValueError:
+        return False
+    return True
+
+
 class CloneError(Exception):
     def __init__(self, message: str, code: int) -> None:
         super().__init__(message)
@@ -235,24 +243,61 @@ def clone_report(template: str | Path, name: str, out_dir: str | Path | None = N
                  logical_id: str | None = None) -> dict[str, Any]:
     """Copy ``template`` to ``<out_dir>/<name>.Report`` with a new identity.
 
+    A relative ``model`` is read from the new report folder, the way
+    ``definition.pbir`` stores it (``../Roastery.SemanticModel`` names a
+    sibling of the copy); it must name an existing ``*.SemanticModel``
+    folder.
+
     Returns ``{"target", "logical_id", "dataset_path"}``. Raises
-    :class:`CloneError` with exit code 2 for a bad template and 1 for an
-    existing target without ``force``."""
+    :class:`CloneError` before anything is written: exit code 2 for a bad
+    template, ``--out-dir``, ``--model`` or ``--logical-id``, and 1 for a
+    target that exists (without ``force``, or as a file)."""
     template = Path(template)
     if not template.is_dir():
         raise CloneError(f"template not found: {template}", 2)
     if not (template / ".platform").is_file():
         raise CloneError(f"template has no .platform: {template}", 2)
+    if logical_id is not None:
+        try:
+            uuid.UUID(logical_id)
+        except ValueError:
+            raise CloneError(f"--logical-id is not a UUID: {logical_id!r}", 2) from None
     parent = Path(out_dir) if out_dir is not None else template.parent
     target = parent / f"{name}.Report"
-    if target.resolve() == template.resolve():
+    tpl_real = template.resolve()
+    if target.resolve() == tpl_real:
         raise CloneError("target is the template itself", 2)
-    if target.exists():
+    if _is_within(parent.resolve(), tpl_real):
+        raise CloneError(f"--out-dir {parent} is inside the template {template}; "
+                         "choose a folder outside it", 2)
+
+    model_rel = None
+    if model is not None:
+        model_path = Path(model)
+        if not model_path.is_absolute():
+            model_path = target / model_path
+        model_real = Path(os.path.abspath(model_path))
+        if not (model_real.name.endswith(".SemanticModel") and model_real.is_dir()):
+            hint = "" if Path(model).is_absolute() else \
+                " (a relative --model is read from the new report folder)"
+            raise CloneError(f"--model {model} does not point to an existing *.SemanticModel "
+                             f"folder: {model_real}{hint}", 2)
+        model_rel = Path(os.path.relpath(model_real.resolve(), target.resolve())).as_posix()
+
+    if target.exists() or target.is_symlink():
+        if not target.is_dir() or target.is_symlink():
+            raise CloneError(f"target exists and is not a folder: {target}", 1)
         if not force:
             raise CloneError(f"target already exists: {target} (use --force to replace it)", 1)
-        shutil.rmtree(target)
-    parent.mkdir(parents=True, exist_ok=True)
-    shutil.copytree(template, target)
+        try:
+            shutil.rmtree(target)
+        except OSError as exc:
+            raise CloneError(f"could not remove {target}: {exc}", 1) from None
+    try:
+        parent.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(template, target)
+    except OSError as exc:
+        raise CloneError(f"could not copy {template} to {target}: {exc}", 1) from None
 
     new_id = (logical_id or str(uuid.uuid4())).lower()
 
@@ -263,14 +308,9 @@ def clone_report(template: str | Path, name: str, out_dir: str | Path | None = N
     _rewrite_json(target / ".platform", set_identity)
 
     pbir = target / "definition.pbir"
-    if model is not None:
-        model_path = Path(model)
-        if not model_path.is_absolute():
-            model_path = Path.cwd() / model_path
-        rel = Path(os.path.relpath(model_path.resolve(), target.resolve())).as_posix()
-
+    if model_rel is not None:
         def set_dataset(obj: dict[str, Any]) -> None:
-            obj.setdefault("datasetReference", {}).setdefault("byPath", {})["path"] = rel
+            obj.setdefault("datasetReference", {}).setdefault("byPath", {})["path"] = model_rel
 
         _rewrite_json(pbir, set_dataset)
     dataset = None
@@ -318,9 +358,21 @@ def preflight_report_findings(report_dir: Path) -> list[str]:
         found = json.loads(proc.stdout).get("violations", [])
     except (ValueError, AttributeError):
         return [f"tmdl-preflight did not return JSON (exit {proc.returncode})"]
-    name = report_dir.name
     return [f"tmdl-preflight B004: {v.get('message', v)}" for v in found
-            if name in json.dumps(v, ensure_ascii=False)]
+            if isinstance(v, dict) and _finding_in(v, report_dir)]
+
+
+def _finding_in(violation: dict[str, Any], report_dir: Path) -> bool:
+    """True when a tmdl-preflight finding is about a file of ``report_dir``
+    itself (not of a sibling whose name merely contains it)."""
+    root = report_dir.resolve()
+    file = violation.get("file")
+    if file:
+        return _is_within(Path(file).resolve(), root)
+    rel = violation.get("path")
+    if rel:
+        return _is_within((report_dir.parent / rel).resolve(), root)
+    return False
 
 
 # ---------------------------------------------------------------------------

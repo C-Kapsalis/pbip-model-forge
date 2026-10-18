@@ -173,3 +173,28 @@ def test_case7_preflight_reports_no_b004(client):
     b004 = [v for v in payload["violations"]
             if (v.get("rule_id") or v.get("rule") or v.get("id")) == "B004"]
     assert b004 == [], b004
+
+
+# -- review fixes ----------------------------------------------------------------
+def test_default_theme_name(client):
+    assert _blank(client).code == 0
+    report = load(client / "Coffee.Report" / "definition" / "report.json")
+    assert report["themeCollection"]["baseTheme"]["name"] == "CY25SU12"
+    assert report["resourcePackages"][0]["items"][0]["path"] == "BaseThemes/CY25SU12.json"
+
+
+def test_an_unexpected_error_fails_that_model_and_the_next_one_still_runs(client, monkeypatch):
+    from pbip_model_forge import report_scaffold
+    shutil.copytree(client / "Coffee.SemanticModel", client / "Tea.SemanticModel")
+    real = report_scaffold.write_full_blank_report
+
+    def flaky(parent, report_name, *a, **k):
+        if report_name == "Coffee":
+            raise RuntimeError("disk said no")
+        return real(parent, report_name, *a, **k)
+
+    monkeypatch.setattr(report_scaffold, "write_full_blank_report", flaky)
+    run = forge("report", "blank", "--client", client, "--model", "Coffee", "Tea", "--full")
+    assert run.code == 1, run.text
+    assert "RuntimeError: disk said no" in run.out
+    assert (client / "Tea.Report" / "definition" / "report.json").is_file()

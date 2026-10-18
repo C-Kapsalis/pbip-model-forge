@@ -114,3 +114,117 @@ def test_case6_hidden_files_are_copied(ws):
     assert forge("clone-report", ws / "Cafe.Report", "Roastery", "--logical-id", NEW_ID).code == 0
     copied = ws / "Roastery.Report" / ".pbi" / "localSettings.json"
     assert copied.read_bytes() == (ws / "Cafe.Report" / ".pbi" / "localSettings.json").read_bytes()
+
+
+# -- review fixes ----------------------------------------------------------------
+def test_relative_model_is_read_from_the_new_report_folder(ws, tmp_path, monkeypatch):
+    elsewhere = tmp_path / "cwd"
+    elsewhere.mkdir()
+    monkeypatch.chdir(elsewhere)
+    run = forge("clone-report", ws / "Cafe.Report", "Roastery", "--model", "../Roastery.SemanticModel",
+                "--logical-id", NEW_ID)
+    assert run.code == 0, run.text
+    pbir = load(ws / "Roastery.Report" / "definition.pbir")
+    assert pbir["datasetReference"]["byPath"]["path"] == "../Roastery.SemanticModel"
+    assert "integrity: ok" in run.out
+
+
+@pytest.mark.parametrize("model", ["Roastery.SemanticModel", "../Nope.SemanticModel", "../Cafe.Report"])
+def test_model_that_is_not_an_existing_semantic_model_is_refused(ws, model):
+    before = tree(ws)
+    run = forge("clone-report", ws / "Cafe.Report", "Roastery", "--model", model, "--logical-id", NEW_ID)
+    assert run.code == 2, run.text
+    assert "does not point to an existing *.SemanticModel folder" in run.out
+    assert tree(ws) == before
+
+
+def test_absolute_missing_model_is_refused(ws):
+    run = forge("clone-report", ws / "Cafe.Report", "X", "--model", ws / "Nope.SemanticModel", "--strict")
+    assert run.code == 2, run.text
+    assert not (ws / "X.Report").exists()
+
+
+def test_strict_turns_integrity_problems_into_exit_1(ws):
+    pages = ws / "Cafe.Report" / "definition" / "pages" / "pages.json"
+    meta = load(pages)
+    meta["pageOrder"].append("deadbeefdeadbeefdead")
+    pages.write_text(json.dumps(meta, indent=2), encoding="utf-8")
+    run = forge("clone-report", ws / "Cafe.Report", "Loose", "--logical-id", NEW_ID)
+    assert run.code == 0, run.text
+    assert "integrity: page deadbeefdeadbeefdead in pages.json has no page.json" in run.out
+    run = forge("clone-report", ws / "Cafe.Report", "Tight", "--logical-id", NEW_ID, "--strict")
+    assert run.code == 1, run.text
+    assert (ws / "Tight.Report" / ".platform").is_file()
+
+
+def test_out_dir_inside_the_template_is_refused(ws):
+    before = tree(ws)
+    for out in (ws / "Cafe.Report", ws / "Cafe.Report" / "sub"):
+        run = forge("clone-report", ws / "Cafe.Report", "Inner", "--out-dir", out)
+        assert run.code == 2, run.text
+        assert "inside the template" in run.out
+    assert tree(ws) == before
+    assert not (ws / "Cafe.Report" / "sub").exists()
+
+
+def test_force_onto_a_plain_file_is_a_clean_error(ws):
+    (ws / "Z.Report").write_text("x", encoding="utf-8")
+    run = forge("clone-report", ws / "Cafe.Report", "Z", "--force")
+    assert run.code == 1, run.text
+    assert "is not a folder" in run.out
+    assert (ws / "Z.Report").read_text(encoding="utf-8") == "x"
+
+
+def test_logical_id_must_be_a_uuid(ws):
+    before = tree(ws)
+    run = forge("clone-report", ws / "Cafe.Report", "Bad", "--logical-id", "not-a-uuid")
+    assert run.code == 2, run.text
+    assert "not a UUID" in run.out
+    assert tree(ws) == before
+
+
+def test_preflight_absent_adds_no_findings(ws, monkeypatch):
+    from pbip_model_forge import report_scaffold
+    monkeypatch.setattr(report_scaffold.importlib.util, "find_spec", lambda name: None)
+    assert report_scaffold.preflight_report_findings(ws / "Cafe.Report") == []
+
+
+def test_preflight_findings_are_attributed_by_exact_folder(ws, monkeypatch):
+    from pbip_model_forge import report_scaffold
+    found = [
+        {"rule": "B004", "message": "sibling broken", "file": str(ws / "MyShop.Report" / "x.json"),
+         "path": "MyShop.Report/x.json"},
+        {"rule": "B004", "message": "clone broken", "file": str(ws / "Shop.Report" / "x.json"),
+         "path": "Shop.Report/x.json"},
+        {"rule": "B004", "message": "by path only", "path": "Shop.Report/y.json"},
+        {"rule": "B004", "message": "path only, sibling", "path": "MyShop.Report/y.json"},
+    ]
+
+    class Proc:
+        returncode, stdout = 1, json.dumps({"violations": found})
+
+    monkeypatch.setattr(report_scaffold.importlib.util, "find_spec", lambda name: object())
+    monkeypatch.setattr(report_scaffold.subprocess, "run", lambda *a, **k: Proc())
+    assert report_scaffold.preflight_report_findings(ws / "Shop.Report") == [
+        "tmdl-preflight B004: clone broken", "tmdl-preflight B004: by path only"]
+
+
+def test_broken_sibling_does_not_fail_a_clean_clone_with_preflight(ws):
+    pytest.importorskip("tmdl_preflight")
+    import shutil
+    sib = ws / "MyShop.Report"
+    shutil.copytree(ws / "Cafe.Report", sib)
+    shutil.rmtree(sib / "definition" / "pages" / "c0ffee00c0ffee00c0ff")
+    run = forge("clone-report", ws / "Cafe.Report", "Shop", "--model", "../Cafe.SemanticModel",
+                "--logical-id", NEW_ID, "--strict")
+    assert run.code == 0, run.text
+    assert "integrity: ok" in run.out
+
+
+def test_preflight_reports_a_broken_clone(ws):
+    pytest.importorskip("tmdl_preflight")
+    import shutil
+    shutil.rmtree(ws / "Cafe.Report" / "definition" / "pages" / "c0ffee00c0ffee00c0ff")
+    run = forge("clone-report", ws / "Cafe.Report", "Shop", "--logical-id", NEW_ID, "--strict")
+    assert run.code == 1, run.text
+    assert "tmdl-preflight B004:" in run.out
