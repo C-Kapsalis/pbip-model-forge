@@ -6,6 +6,8 @@
     pbip-forge build SPEC OUT_DIR [--check] [--profile ...] [--no-handoff]
     pbip-forge rules
     pbip-forge table dump FILE.tmdl | --b64 STRING [--max-rows N]
+    pbip-forge report blank --client DIR --model NAME... [--full] [--dry-run]
+    pbip-forge clone-report TEMPLATE.Report NAME [--model PATH] [--force]
 
 SPEC is either a JSON file holding the spec dict, or a Python file that
 defines a module-level ``SPEC`` dict (like ``scripts/build_hospital.py``).
@@ -113,6 +115,28 @@ def _add_model_commands(sub: Any) -> None:
     p_dump.add_argument("--max-rows", type=int, default=20,
                         help="data rows to print (default 20)")
 
+    p_report = sub.add_parser("report", help="report scaffolding")
+    report_sub = p_report.add_subparsers(dest="report_command", required=True)
+    p_blank = report_sub.add_parser("blank", help="create a blank report bound to an existing model")
+    p_blank.add_argument("--client", required=True, help="folder holding <name>.SemanticModel")
+    p_blank.add_argument("--model", nargs="+", required=True, help="model name(s)")
+    p_blank.add_argument("--name", help="report name (one model only; default: the model name)")
+    p_blank.add_argument("--theme", default=None, help="base theme name")
+    p_blank.add_argument("--theme-file", help="theme JSON to copy into the report")
+    p_blank.add_argument("--full", action="store_true",
+                         help="write a complete PBIR definition (pages, report.json, ...)")
+    p_blank.add_argument("--dry-run", action="store_true", help="list what would be created")
+
+    p_clone = sub.add_parser("clone-report", help="copy a report under a new name and identity")
+    p_clone.add_argument("template", help="existing <X>.Report folder")
+    p_clone.add_argument("name", help="name of the new report")
+    p_clone.add_argument("--out-dir", help="parent folder of the copy (default: the template's)")
+    p_clone.add_argument("--model", help="semantic model folder the copy should point at")
+    p_clone.add_argument("--force", action="store_true", help="replace an existing target folder")
+    p_clone.add_argument("--logical-id", help="logicalId to use instead of a random UUID")
+    p_clone.add_argument("--strict", action="store_true",
+                         help="exit 1 when the copy fails the report integrity checks")
+
 
 def _cmd_table(args: argparse.Namespace) -> int:
     from . import enter_data
@@ -131,8 +155,20 @@ def _cmd_table(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_report(args: argparse.Namespace) -> int:
+    from .report_scaffold import blank_reports_cli
+    return blank_reports_cli(args)
+
+
+def _cmd_clone(args: argparse.Namespace) -> int:
+    from .report_scaffold import clone_report_cli
+    return clone_report_cli(args)
+
+
 _MODEL_COMMANDS = {
     "table": _cmd_table,
+    "report": _cmd_report,
+    "clone-report": _cmd_clone,
 }
 
 

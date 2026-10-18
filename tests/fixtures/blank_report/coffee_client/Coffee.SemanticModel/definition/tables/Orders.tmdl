@@ -1,0 +1,24 @@
+table 'Orders'
+	lineageTag: orders
+
+	column 'Order Id'
+		dataType: int64
+		lineageTag: orders-order-id
+		summarizeBy: none
+		sourceColumn: Order Id
+
+	column Amount
+		dataType: double
+		lineageTag: orders-amount
+		summarizeBy: none
+		sourceColumn: Amount
+
+	partition 'Orders' = m
+		mode: import
+		source =
+				let
+				    Source = Csv.Document(File.Contents("C:\\data\\Orders.csv"))
+				in
+				    Source
+
+	annotation PBI_ResultType = Table
