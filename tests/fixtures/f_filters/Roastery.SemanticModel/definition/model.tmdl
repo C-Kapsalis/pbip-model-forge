@@ -1,0 +1,10 @@
+model Model
+	culture: en-US
+	defaultPowerBIDataSourceVersion: powerBI_V3
+
+ref table 'Store Sales'
+ref table 'Web Sales'
+ref table 'Sales Measures'
+ref table 'x-Selector 1'
+ref table 'z-Map Dimension-Measure Groupings'
+ref table 'f-Filters'

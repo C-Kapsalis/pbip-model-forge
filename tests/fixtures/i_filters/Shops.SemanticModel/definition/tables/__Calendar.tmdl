@@ -1,0 +1,18 @@
+table '__Calendar'
+	lineageTag: __calendar
+
+	column Date
+		dataType: dateTime
+		lineageTag: __calendar-date
+		summarizeBy: none
+		sourceColumn: Date
+
+	partition '__Calendar' = m
+		mode: import
+		source =
+				let
+				    Source = Csv.Document(File.Contents("C:\\data\\__Calendar.csv"))
+				in
+				    Source
+
+	annotation PBI_ResultType = Table

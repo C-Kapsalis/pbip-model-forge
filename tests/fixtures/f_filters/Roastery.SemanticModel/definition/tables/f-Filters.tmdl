@@ -1,0 +1,37 @@
+table 'f-Filters'
+	lineageTag: f-filters
+
+	measure 'f-All' = ```
+			VAR all_cats = CONCATENATEX(VALUES('z-Map Dimension-Measure Groupings'[Analysis Category]), 'z-Map Dimension-Measure Groupings'[Analysis Category], ",")
+			VAR temp_basic = TRUE()
+			    && IF(CONTAINSSTRING(all_cats, "Email Marketing"), IF([f-Email_Marketing] > 0, TRUE(), FALSE()), TRUE())
+			VAR temp_alt = FALSE()
+			    || IF(CONTAINSSTRING(all_cats, "Email Marketing"), IF([f-Email_Marketing] > 0, TRUE(), FALSE()), FALSE())
+			RETURN IF(temp_basic || temp_alt, 1, 0)
+			```
+		isHidden
+		displayFolder: Visual-Level filters
+		lineageTag: f-all
+
+	measure 'f-Spend' = ```
+			int(not ISEMPTY('Store Sales'))
+			```
+		isHidden
+		displayFolder: Visual-Level filters
+		lineageTag: f-spend
+
+	measure 'f-Email_Marketing' = 1
+		isHidden
+		displayFolder: Visual-Level filters
+		lineageTag: f-email-marketing
+
+	partition 'f-Filters' = m
+		mode: import
+		source =
+				let
+				    Source = Table.FromRows(Json.Document(Binary.Decompress(Binary.FromText("i45WUlCKjQUA", BinaryEncoding.Base64), Compression.Deflate)), let _t = ((type nullable text) meta [Serialized.Text = true]) in type table [z = _t]),
+				    #"Removed Columns" = Table.RemoveColumns(Source,{"z"})
+				in
+				    #"Removed Columns"
+
+	annotation PBI_ResultType = Table

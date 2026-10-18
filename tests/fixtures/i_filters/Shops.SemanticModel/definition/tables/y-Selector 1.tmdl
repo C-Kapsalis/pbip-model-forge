@@ -1,0 +1,33 @@
+table 'y-Selector 1'
+	lineageTag: y-selector-1
+
+	column 'y-Selector 1'
+		dataType: string
+		lineageTag: y-selector-1-name
+		summarizeBy: none
+		sourceColumn: [Value1]
+		sortByColumn: 'y-Selector 1 Order'
+
+		relatedColumnDetails
+			groupByColumn: 'y-Selector 1 Fields'
+
+	column 'y-Selector 1 Fields'
+		dataType: string
+		lineageTag: y-selector-1-fields
+		summarizeBy: none
+		sourceColumn: [Value2]
+
+	column 'y-Selector 1 Order'
+		dataType: int64
+		lineageTag: y-selector-1-order
+		summarizeBy: none
+		sourceColumn: [Value3]
+
+	partition 'y-Selector 1' = calculated
+		mode: import
+		source =
+				{
+				    ("Store Name", NAMEOF('Stores'[Store Name]), 2),
+				    ("Region", NAMEOF('Stores'[Region]), 1),
+				    ("Date", NAMEOF('__Calendar'[Date]), 3)
+				}

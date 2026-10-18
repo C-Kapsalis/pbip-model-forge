@@ -1,0 +1,24 @@
+table 'Store Sales'
+	lineageTag: store-sales
+
+	column Amount
+		dataType: double
+		lineageTag: store-sales-amount
+		summarizeBy: none
+		sourceColumn: Amount
+
+	column 'Store Id'
+		dataType: int64
+		lineageTag: store-sales-store-id
+		summarizeBy: none
+		sourceColumn: Store Id
+
+	partition 'Store Sales' = m
+		mode: import
+		source =
+				let
+				    Source = Csv.Document(File.Contents("C:\\data\\Store Sales.csv"))
+				in
+				    Source
+
+	annotation PBI_ResultType = Table

@@ -1,0 +1,24 @@
+table 'Web Sales'
+	lineageTag: web-sales
+
+	column Amount
+		dataType: double
+		lineageTag: web-sales-amount
+		summarizeBy: none
+		sourceColumn: Amount
+
+	column 'Order Id'
+		dataType: int64
+		lineageTag: web-sales-order-id
+		summarizeBy: none
+		sourceColumn: Order Id
+
+	partition 'Web Sales' = m
+		mode: import
+		source =
+				let
+				    Source = Csv.Document(File.Contents("C:\\data\\Web Sales.csv"))
+				in
+				    Source
+
+	annotation PBI_ResultType = Table

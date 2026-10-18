@@ -1,0 +1,40 @@
+table 'x-Selector 1'
+	lineageTag: x-selector-1
+
+	column 'x-Selector 1'
+		dataType: string
+		lineageTag: x-selector-1-name
+		summarizeBy: none
+		sourceColumn: [Value1]
+		sortByColumn: 'x-Selector 1 Order'
+
+		relatedColumnDetails
+			groupByColumn: 'x-Selector 1 Fields'
+
+	column 'x-Selector 1 Fields'
+		dataType: string
+		lineageTag: x-selector-1-fields
+		summarizeBy: none
+		sourceColumn: [Value2]
+
+	column 'x-Selector 1 Order'
+		dataType: int64
+		lineageTag: x-selector-1-order
+		summarizeBy: none
+		sourceColumn: [Value3]
+
+	column 'x-Selector 1 Group'
+		dataType: string
+		lineageTag: x-selector-1-group
+		summarizeBy: none
+		sourceColumn: [Value4]
+
+	partition 'x-Selector 1' = calculated
+		mode: import
+		source =
+				{
+				    ("Store Revenue", NAMEOF('Sales Measures'[Store Revenue]), 0, "store_m"),
+				    ("Web Revenue", NAMEOF('Sales Measures'[Web Revenue]), 1, "web_m")
+				}
+
+	annotation PBI_Id = 0b1c2d3e4f

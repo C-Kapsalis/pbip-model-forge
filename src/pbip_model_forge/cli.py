@@ -8,6 +8,8 @@
     pbip-forge table dump FILE.tmdl | --b64 STRING [--max-rows N]
     pbip-forge report blank --client DIR --model NAME... [--full] [--dry-run]
     pbip-forge clone-report TEMPLATE.Report NAME [--model PATH] [--force]
+    pbip-forge f-filters --model M.SemanticModel [--dry-run] [--no-backups]
+    pbip-forge i-filters --model M.SemanticModel [--dry-run] [--no-backups]
 
 SPEC is either a JSON file holding the spec dict, or a Python file that
 defines a module-level ``SPEC`` dict (like ``scripts/build_hospital.py``).
@@ -137,6 +139,19 @@ def _add_model_commands(sub: Any) -> None:
     p_clone.add_argument("--strict", action="store_true",
                          help="exit 1 when the copy fails the report integrity checks")
 
+    for cmd, what in (("f-filters", "fill f-<Category> measures and f-All gates"),
+                      ("i-filters", "regenerate the i-Applied Filters caption measure")):
+        p = sub.add_parser(cmd, help=what)
+        where = p.add_mutually_exclusive_group(required=True)
+        where.add_argument("--model", action="append", help="<X>.SemanticModel folder (repeatable)")
+        where.add_argument("--fleet", help="folder whose *.SemanticModel children are all processed")
+        p.add_argument("--dry-run", action="store_true", help="show the plan, write nothing")
+        p.add_argument("--no-backups", action="store_true", help="do not keep a timestamped backup")
+        p.add_argument("-v", "--verbose", action="store_true")
+        if cmd == "i-filters":
+            p.add_argument("--skip-validation", action="store_true",
+                           help="write even when the generated measure fails validation")
+
 
 def _cmd_table(args: argparse.Namespace) -> int:
     from . import enter_data
@@ -165,10 +180,30 @@ def _cmd_clone(args: argparse.Namespace) -> int:
     return clone_report_cli(args)
 
 
+def _model_targets(args: argparse.Namespace) -> list[Path]:
+    if args.model:
+        return [Path(m) for m in args.model]
+    return sorted(p for p in Path(args.fleet).glob("*.SemanticModel") if p.is_dir())
+
+
+def _cmd_f_filters(args: argparse.Namespace) -> int:
+    from .f_filters import run_cli
+    return run_cli(_model_targets(args), dry_run=args.dry_run,
+                   backups=not args.no_backups, verbose=args.verbose)
+
+
+def _cmd_i_filters(args: argparse.Namespace) -> int:
+    from .i_filters import run_cli
+    return run_cli(_model_targets(args), dry_run=args.dry_run, backups=not args.no_backups,
+                   validate=not args.skip_validation, verbose=args.verbose)
+
+
 _MODEL_COMMANDS = {
     "table": _cmd_table,
     "report": _cmd_report,
     "clone-report": _cmd_clone,
+    "f-filters": _cmd_f_filters,
+    "i-filters": _cmd_i_filters,
 }
 
 

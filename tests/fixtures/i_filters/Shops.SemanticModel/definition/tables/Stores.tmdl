@@ -1,0 +1,30 @@
+table 'Stores'
+	lineageTag: stores
+
+	column Region
+		dataType: string
+		lineageTag: stores-region
+		summarizeBy: none
+		sourceColumn: Region
+
+	column 'Store Name'
+		dataType: string
+		lineageTag: stores-store-name
+		summarizeBy: none
+		sourceColumn: Store Name
+
+	column 'Store Id'
+		dataType: int64
+		lineageTag: stores-store-id
+		summarizeBy: none
+		sourceColumn: Store Id
+
+	partition 'Stores' = m
+		mode: import
+		source =
+				let
+				    Source = Csv.Document(File.Contents("C:\\data\\Stores.csv"))
+				in
+				    Source
+
+	annotation PBI_ResultType = Table
