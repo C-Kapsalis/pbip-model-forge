@@ -18,15 +18,19 @@ and `build`. See [docs/model-commands.md](docs/model-commands.md).
   exception) and `encode_rows(rows, parity_json=True)` (cells kept as they
   are, standard JSON spacing, ASCII escaping). The default encoding is
   unchanged.
-- **`pbip-forge report blank --client DIR --model NAME... [--full]`** creates
-  a report bound to an existing model. `--full` writes the complete PBIR
-  definition (report.json, version.json, one page, localSettings) that Fabric
-  Git sync and deployment pipelines need; the default stays the two-file
-  form. Existing reports are never overwritten; missing models are skipped
-  with a warning. `--theme`/`--theme-file` set and copy the base theme
-  (default name `CY25SU12`, the December 2025 built-in theme). An error of
-  any kind while writing one report is printed, fails that report and the
-  other models are still processed.
+- **`pbip-forge report blank --client DIR --model NAME...`** creates
+  a report bound to an existing model. The command writes the complete
+  PBIR definition (report.json, version.json, one page, localSettings) that
+  Fabric Git sync and deployment pipelines need; `--full` is still accepted
+  and has no further effect. Every file is written with two-space
+  indentation, a space after the keys and no trailing newline, and
+  non-ASCII characters are escaped. Existing reports are never overwritten;
+  a missing model is skipped and a missing client folder fails. The console
+  output is the original's: a banner, one block per model, and a footer
+  that says whether every report was created. `--theme`/`--theme-file` set
+  and copy the base theme (default name `CY25SU12`, the December 2025
+  built-in theme). An error of any kind while writing one report is
+  printed, fails that report and the other models are still processed.
 - **`pbip-forge clone-report TEMPLATE NAME [--model PATH]`** copies a report
   with a new `logicalId` and display name and points it at another model
   through a relative path. A relative `--model` is read from the new

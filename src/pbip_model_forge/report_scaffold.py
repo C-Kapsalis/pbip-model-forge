@@ -51,7 +51,12 @@ _SUBDIRS = (
 
 
 def _dump(obj: Any, indent: int | str = 2) -> str:
-    return json.dumps(obj, indent=indent, ensure_ascii=False) + "\n"
+    """A JSON document, as the original writes it.
+
+    Two-space indentation, `": "` after the keys, and NO newline at the
+    end of the file.
+    """
+    return json.dumps(obj, indent=indent, ensure_ascii=True)
 
 
 #: report-level switches written into every new report.json
@@ -145,55 +150,83 @@ def _sibling_theme(client: Path, theme: str) -> Path | None:
     return None
 
 
+#: The console tags the original writes, with their colours.
+_TAG = {
+    "info": "\033[0;34m[INFO]\033[0m",
+    "success": "\033[0;32m[SUCCESS]\033[0m",
+    "warning": "\033[1;33m[WARNING]\033[0m",
+}
+
+
+def _rule() -> str:
+    return "=" * 80
+
+
 def blank_reports_cli(args: argparse.Namespace) -> int:
+    """``pbip-forge report blank``: the original's output, byte for byte.
+
+    The full PBIR definition is the default; there is no minimal mode in
+    this command (``build`` keeps its own two-file report).
+    """
     client = Path(args.client)
     if not client.is_dir():
-        print(f"error: client folder not found: {client}")
+        print(f"❌ Client directory not found: {client}")
         return 1
     if args.name and len(args.model) > 1:
-        print("error: --name works with exactly one --model")
+        print("error: --name works with exactly one --model", file=sys.stderr)
         return 2
     theme = args.theme or DEFAULT_THEME
-    failed = 0
+    print(_rule())
+    print("CREATE BLANK REPORTS")
+    print(_rule())
+    print()
+    success = True
     for model in args.model:
         report_name = args.name or model
         model_dir = client / f"{model}.SemanticModel"
         report_dir = client / f"{report_name}.Report"
-        if not model_dir.is_dir():
-            print(f"warning: {model_dir} not found; skipped {model}")
+        if not model_dir.exists():
+            print(f"⚠️  Semantic model not found: {model_dir}")
+            print(f"   Skipping report creation for {model}")
+            print()
             continue
         if report_dir.exists():
-            print(f"skip: {report_dir} already exists (never overwritten)")
+            print(f"ℹ️  Report already exists: {report_name}")
+            print(f"   Skipping: {report_dir}")
+            print()
             continue
-        theme_src = Path(args.theme_file) if args.theme_file else _sibling_theme(client, theme)
+        print(f"Creating blank report: {report_name}")
+        print(f"  Location: {report_dir}")
+        print(f"  References: {model}.SemanticModel")
+        print()
         if args.dry_run:
-            if args.full:
-                rels = sorted(set(_SUBDIRS) | set(full_report_files(
-                    report_name, model, theme, "<logicalId>", "<page id>")))
-            else:
-                rels = [".platform", "definition.pbir"]
-            print(f"would create {report_dir}")
-            for rel in rels:
-                print(f"  {rel}")
-            if args.full and theme_src is not None and theme_src.is_file():
-                print(f"  StaticResources/SharedResources/BaseThemes/{theme}.json (from {theme_src})")
+            print("  [DRY RUN] Would create:")
+            for rel in (".platform", "definition.pbir",
+                        "definition/report.json", "definition/version.json",
+                        "definition/pages/", "definition/bookmarks/",
+                        "StaticResources/"):
+                print(f"    - {report_dir}/{rel}")
+            print()
             continue
+        theme_src = (Path(args.theme_file) if args.theme_file
+                     else _sibling_theme(client, theme))
         try:
-            if args.full:
-                write_full_blank_report(client, report_name, model, theme, theme_src)
-            else:
-                write_blank_report(client, report_name, model_name=model)
-        except Exception as exc:  # one bad model must not stop the others
-            print(f"error: {report_dir}: {type(exc).__name__}: {exc}")
-            failed += 1
+            write_full_blank_report(client, report_name, model, theme,
+                                    theme_src)
+        except Exception as exc:      # one bad model must not stop the rest
+            print(f"❌ Error creating report: {exc}")
+            import traceback
+            traceback.print_exc()
+            success = False
             continue
-        print(f"created {report_dir}")
-        if args.full and (theme_src is None or not theme_src.is_file()):
-            print(f"  note: no theme file copied; report.json names '{theme}' and "
-                  "Power BI falls back to its default theme")
-        for problem in check_report(report_dir):
-            print(f"  integrity: {problem}")
-    return 1 if failed else 0
+        print(f"✅ Created blank report: {report_name}")
+        print(f"   Location: {report_dir}")
+        print()
+    print(_rule())
+    print("✅ ALL REPORTS CREATED SUCCESSFULLY" if success
+          else "⚠️  SOME REPORTS FAILED")
+    print(_rule())
+    return 0 if success else 1
 
 
 # ---------------------------------------------------------------------------
