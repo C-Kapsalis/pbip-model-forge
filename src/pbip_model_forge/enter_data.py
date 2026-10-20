@@ -152,24 +152,47 @@ def decode_file(path: str | Path) -> list[list[Any]] | None:
     return decode_b64_or_none(b64)
 
 
+def decode_file_or_error(path: str | Path) -> tuple[list[list[Any]] | None, str | None]:
+    """Rows of the first payload in a TMDL file, with the original's errors.
+
+    Returns ``(rows, error)``. The error is the text the original prints
+    after ``Error decrypting: `` — a decode failure or a payload that is not
+    a JSON array.
+    """
+    path = Path(path)
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError as exc:
+        return None, f"the file could not be read: {exc}"
+    b64 = first_payload(text)
+    if b64 is None:
+        return None, f"No binary data found in {path}"
+    try:
+        rows = decode_base64(b64.strip())
+    except (ValueError, zlib.error, UnicodeDecodeError) as exc:
+        return None, " ".join(str(exc).split()) or type(exc).__name__
+    if not isinstance(rows, list):
+        return None, "the decoded payload is not a JSON array of rows"
+    return rows, None
+
+
 def format_dump(rows: Sequence[Sequence[Any]], max_rows: int = 20) -> str:
-    """A review listing of decoded rows. Row 0 is shown as column names."""
+    """The original's listing of decoded rows.
+
+    Row 0 is the column names; the rest are the data rows. The block is
+    the original's, byte for byte.
+    """
     if not rows:
-        return "No data: the payload is an empty array.\n"
-
-    def cell(v: Any) -> str:
-        return "(null)" if v is None else str(v)
-
+        return "No data\n"
     names, body = rows[0], rows[1:]
-    out = [f"Columns ({len(names)}): " + " | ".join(cell(v) for v in names),
-           f"Data rows: {len(body)}"]
+    out = [f"Columns: {names}", "", f"Total rows: {len(body)}", "",
+           f"Data (first {max_rows} rows):", "-" * 80]
     shown = body[:max(max_rows, 0)]
-    width = len(str(len(shown))) if shown else 1
-    for n, row in enumerate(shown, start=1):
-        out.append(f"{n:>{width}}  " + " | ".join(cell(v) for v in row))
+    for n, row in enumerate(shown, 1):
+        out.append(f"{n:3d}. {row}")
     hidden = len(body) - len(shown)
     if hidden > 0:
-        out.append(f"... {hidden} more rows not shown (use --max-rows)")
+        out.append(f"... and {hidden} more rows")
     return "\n".join(out) + "\n"
 
 

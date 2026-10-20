@@ -8,10 +8,12 @@ and `build`. See [docs/model-commands.md](docs/model-commands.md).
 ### Added
 
 - **`pbip-forge table dump FILE | --b64 STRING [--max-rows N]`** prints the
-  rows of an encoded "Enter data" table: column names (row 0), the data-row
-  count, the first 20 rows numbered from 1 and how many were left out. Only
-  the file's first payload is read and the file is never written. A corrupt
-  payload prints one error line and exits 1.
+  rows of an encoded "Enter data" table: the column names (row 0), the
+  data-row count, and the first 20 rows numbered from 1, with the number of
+  rows left out. Only the file's first payload is read and the file is
+  never written. A file with no payload prints `No binary data found in
+  <file>` on standard error and exits 1; a payload that does not decode
+  prints `Error decrypting: <the error>` and exits 1.
 - **Codec additions** in `enter_data`: `decode_file(path)` (first payload;
   `ValueError("no encoded payload in <file>")` when there is none),
   `decode_b64_or_none(b64)` (None plus one error line instead of an

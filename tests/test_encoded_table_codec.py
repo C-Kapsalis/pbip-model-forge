@@ -104,9 +104,9 @@ def test_case6_dump_shows_first_twenty_of_twenty_five(tmp_path):
     run = forge("table", "dump", _dump_rows(25, tmp_path))
     assert run.code == 0, run.text
     assert "Shop" in run.out and "Region" in run.out
-    assert "Data rows: 25\n" in run.out
+    assert "Total rows: 25\n" in run.out
     assert "shop20" in run.out and "shop21" not in run.out
-    assert run.out.splitlines()[-1] == "... 5 more rows not shown (use --max-rows)"
+    assert run.out.splitlines()[-1] == "... and 5 more rows"
     assert re.search(r"^\s*1\b.*shop01", run.out, re.M)   # 1-based numbering
 
 
@@ -114,7 +114,7 @@ def test_case6_max_rows_option(tmp_path):
     run = forge("table", "dump", _dump_rows(25, tmp_path), "--max-rows", "3")
     assert run.code == 0, run.text
     assert "shop03" in run.out and "shop04" not in run.out
-    assert run.out.splitlines()[-1] == "... 22 more rows not shown (use --max-rows)"
+    assert run.out.splitlines()[-1] == "... and 22 more rows"
 
 
 # -- case 7 ----------------------------------------------------------------------

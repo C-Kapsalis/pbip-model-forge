@@ -171,14 +171,16 @@ def _cmd_table(args: argparse.Namespace) -> int:
 
     if args.b64 is not None:
         rows = enter_data.decode_b64_or_none(args.b64)
-    else:
-        try:
-            rows = enter_data.decode_file(args.file)
-        except (OSError, ValueError) as exc:
-            print(f"error: {exc}", file=sys.stderr)
+        if rows is None:
             return 1
-    if rows is None:
-        return 1
+    else:
+        rows, error = enter_data.decode_file_or_error(args.file)
+        if error is not None:
+            if error.startswith("No binary data found in "):
+                print(error, file=sys.stderr)
+            else:
+                print(f"Error decrypting: {error}")
+            return 1
     sys.stdout.write(enter_data.format_dump(rows, args.max_rows))
     return 0
 
