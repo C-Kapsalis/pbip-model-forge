@@ -47,14 +47,24 @@ class lazy_module:
         return getattr(importlib.import_module(self._name), attr)
 
 
-def forge(*args: object) -> Run:
-    """Run ``pbip-forge ARGS`` in-process and capture exit code and output."""
+def forge(*args: object, input: str | None = None) -> Run:
+    """Run ``pbip-forge ARGS`` in-process and capture exit code and output.
+
+    ``input`` is what standard input carries while the command runs (a
+    prompt reads from it)."""
     out, err = io.StringIO(), io.StringIO()
+    stdin = io.StringIO(input) if input is not None else None
     with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+        old_stdin = sys.stdin
+        if stdin is not None:
+            sys.stdin = stdin
         try:
-            code = forge_main([str(a) for a in args])
-        except SystemExit as exc:  # argparse errors and explicit exits
-            code = exc.code if isinstance(exc.code, int) else (0 if exc.code is None else 1)
+            try:
+                code = forge_main([str(a) for a in args])
+            except SystemExit as exc:  # argparse errors and explicit exits
+                code = exc.code if isinstance(exc.code, int) else (0 if exc.code is None else 1)
+        finally:
+            sys.stdin = old_stdin
     return Run(int(code or 0), out.getvalue(), err.getvalue())
 
 

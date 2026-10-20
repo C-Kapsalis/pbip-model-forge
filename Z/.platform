@@ -1,0 +1,12 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/gitIntegration/platformProperties/2.0.0/schema.json",
+  "metadata": {
+    "type": "Report",
+    "displayName": "Z",
+    "description": "Daily cafe sales"
+  },
+  "config": {
+    "version": "2.0",
+    "logicalId": "6201c84e-27ae-408b-a468-f6ca873f2fc3"
+  }
+}

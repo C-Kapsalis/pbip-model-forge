@@ -1,0 +1,12 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/gitIntegration/platformProperties/2.0.0/schema.json",
+  "metadata": {
+    "type": "Report",
+    "displayName": "Roastery",
+    "description": "Daily cafe sales"
+  },
+  "config": {
+    "version": "2.0",
+    "logicalId": "bbbbbbbb-1111-2222-3333-444444444444"
+  }
+}

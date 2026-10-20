@@ -31,21 +31,27 @@ and `build`. See [docs/model-commands.md](docs/model-commands.md).
   and copy the base theme (default name `CY25SU12`, the December 2025
   built-in theme). An error of any kind while writing one report is
   printed, fails that report and the other models are still processed.
-- **`pbip-forge clone-report TEMPLATE NAME [--model PATH]`** copies a report
-  with a new `logicalId` and display name and points it at another model
-  through a relative path. A relative `--model` is read from the new
-  report folder (`--model ../Roastery.SemanticModel`) and must name an
-  existing `*.SemanticModel` folder. Exit 1 when the target exists without
-  `--force` or is a file; 2 for a missing template or one without
-  `.platform`, an `--out-dir` inside the template, a bad `--model` or a
-  `--logical-id` that is not a UUID. Nothing is written on an error. No
-  backup files.
-- **Report integrity check** after `report blank` and `clone-report`: the
-  dataset reference resolves, every page in `pages.json` has a parseable
-  `page.json`, `activePageName` is listed. With tmdl-preflight installed,
-  `clone-report` also prints its B004 findings for files inside the copy's
-  own folder (a sibling such as `MyShop.Report` never counts against
-  `Shop.Report`). `--strict` makes problems exit 1.
+- **`pbip-forge clone-report TEMPLATE [NAME] [TARGET_DIR] [SEMANTIC_MODEL]`**
+  copies a report under a new name and identity. The target directory is
+  the report folder itself, used exactly as given (no `.Report` is added);
+  it defaults to `<cwd>/<NAME>`. The semantic model is a free string, with
+  no existence check; it defaults to `<NAME>.SemanticModel`, and `--model`
+  is the same argument. The copy keeps a `.backup` of every file it edits
+  (`definition.pbir` and `.platform`), the value edits are JSON-aware (the
+  value is escaped and any spacing is accepted), and the log lines carry a
+  coloured tag. The four required files are checked in order and a missing
+  one ends the run with exit 1, the copy staying. Exit 0 on success or when
+  the operator declines the overwrite prompt; 1 for a missing template, a
+  missing required file or a failed template check; 2 for the target being
+  inside the template or a `--logical-id` that is not a UUID. `--force`
+  replaces an existing target without asking; `--expect-visuals` and
+  `--expect-bookmark` turn on the template's own checks.
+- **Report integrity check** in the `pbip_model_forge.report_scaffold` API
+  (`check_report`): the dataset reference resolves, every page in
+  `pages.json` has a parseable `page.json`, `activePageName` is listed.
+  With tmdl-preflight installed, `preflight_report_findings` returns its
+  B004 findings for files inside the copy's own folder (a sibling such as
+  `MyShop.Report` never counts against `Shop.Report`).
 - **`pbip-forge f-filters --model M`** (repeatable, or `--fleet DIR`)
   creates missing `f-<Category>` gate measures, appends uncovered fact
   tables to existing ones (with a warning on stdout and stderr), and
@@ -103,6 +109,16 @@ Where these commands deliberately differ from the scripts they replace:
   before references are detected.
 - BUGFIX: the verbose f-filters line reads `Loading model index`, and the
   warnings point at tmdl-preflight A005 for the f-measure shapes.
+- BUGFIX: `table dump` rejects a payload that is not a JSON array (the
+  original crashed on it).
+- BUGFIX: `clone-report` edits `.platform` and `definition.pbir` as JSON
+  values (the original's text replacement missed compact JSON and broke on
+  quotes in names).
+- BUGFIX: an empty decoded payload prints `No data` instead of an empty
+  listing.
+- BUGFIX: a target directory inside the template is refused (exit 2,
+  nothing written).
+- BUGFIX: `--logical-id` is validated as a UUID.
 
 ### Notes
 

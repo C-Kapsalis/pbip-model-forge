@@ -130,14 +130,27 @@ def _add_model_commands(sub: Any) -> None:
     p_blank.add_argument("--dry-run", action="store_true", help="list what would be created")
 
     p_clone = sub.add_parser("clone-report", help="copy a report under a new name and identity")
-    p_clone.add_argument("template", help="existing <X>.Report folder")
-    p_clone.add_argument("name", help="name of the new report")
-    p_clone.add_argument("--out-dir", help="parent folder of the copy (default: the template's)")
-    p_clone.add_argument("--model", help="semantic model folder the copy should point at")
-    p_clone.add_argument("--force", action="store_true", help="replace an existing target folder")
+    p_clone.add_argument("template", help="the template report folder to copy")
+    p_clone.add_argument("name", nargs="?", default="MyCompany-Analytics",
+                         help="the deployment name (default: MyCompany-Analytics)")
+    p_clone.add_argument("target_dir", nargs="?", default=None,
+                         help="the report folder itself, used exactly as given "
+                              "(default: <cwd>/<NAME>)")
+    p_clone.add_argument("semantic_model", nargs="?", default=None,
+                         help="the semantic model the copy points at "
+                              "(default: <NAME>.SemanticModel)")
+    p_clone.add_argument("--model", default=None,
+                         help="the same as the semantic model argument")
+    p_clone.add_argument("--force", action="store_true",
+                         help="replace an existing target without asking")
     p_clone.add_argument("--logical-id", help="logicalId to use instead of a random UUID")
     p_clone.add_argument("--strict", action="store_true",
                          help="exit 1 when the copy fails the report integrity checks")
+    p_clone.add_argument("--expect-visuals", type=int, default=None,
+                         help="check the copy's visual count against this number")
+    p_clone.add_argument("--expect-bookmark", action="append", default=None,
+                         help="check that this bookmark exists in the copy "
+                              "(repeatable)")
 
     for cmd, what in (("f-filters", "fill f-<Category> measures and f-All gates"),
                       ("i-filters", "regenerate the i-Applied Filters caption measure")):
