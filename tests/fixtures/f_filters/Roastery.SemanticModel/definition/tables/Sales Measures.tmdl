@@ -9,6 +9,10 @@ table 'Sales Measures'
 		formatString: #,0
 		lineageTag: web-revenue
 
+	measure 'Web Total' = [Web Revenue]
+		formatString: #,0
+		lineageTag: web-total
+
 	partition 'Sales Measures' = m
 		mode: import
 		source =

@@ -1,4 +1,4 @@
-"""Shared helpers for the ported pbip-model-forge command tests.
+"""Shared helpers for the pbip-model-forge command tests.
 
 The CLI is driven in-process through ``pbip_model_forge.cli.forge_main`` so a
 test can monkeypatch library seams (for example the i-Applied Filters

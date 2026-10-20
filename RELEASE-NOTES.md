@@ -42,39 +42,56 @@ and `build`. See [docs/model-commands.md](docs/model-commands.md).
   `clone-report` also prints its B004 findings for files inside the copy's
   own folder (a sibling such as `MyShop.Report` never counts against
   `Shop.Report`). `--strict` makes problems exit 1.
-- **`pbip-forge f-filters --model M`** creates missing `f-<Category>` gate
-  measures, appends uncovered fact tables to existing ones (with a loud
-  warning on stdout and stderr), and appends paired `temp_basic`/`temp_alt`
-  gate lines to `f-All` for every created or z-Map category that no live
-  literal gates. Append-only, idempotent, `--dry-run`, timestamped backup
-  unless `--no-backups`; a model without `f-Filters.tmdl` exits 1. Gate
-  lines go only into `f-All`'s chains (a chain variable declared twice
-  there writes nothing, with a warning). Terms added to a measure whose
-  last line ends in a `//` or `--` comment go before the comment. `"` in a
-  category and `]` in a measure name are escaped in the written DAX. The
-  detection helpers are public in `pbip_model_forge.f_filters`
-  (`live_gate_names`, `find_gate_measure`, `map_table_categories`, ...).
+- **`pbip-forge f-filters --model M`** (repeatable, or `--fleet DIR`)
+  creates missing `f-<Category>` gate measures, appends uncovered fact
+  tables to existing ones (with a warning on stdout and stderr), and
+  appends paired `temp_basic`/`temp_alt` gate lines to `f-All`: first for
+  the created categories, then for every z-Map category that no live
+  `temp_basic` literal gates. A fact is uncovered when a user-facing
+  measure (decided by name) reaches it, no `f-` measure does, and no
+  user-facing x-Selector entry measure with a mapped group reads it for
+  data. Categories come from `x-Selector 1..9` entries joined to the
+  `z-Map Dimension-Measure Groupings` rows. Created measures go before the
+  table's result-type annotation, inline below 100 characters. The console
+  shows a header, one summary line per model and its items, and a review
+  note on stderr; `-v` adds every step. Append-only, idempotent,
+  `--dry-run`, backup `f-Filters.tmdl.backup_gapfill_<YYYYmmdd_HHMMSS>`
+  (byte copy, original modification time) unless `--no-backups`; a model
+  without `f-Filters.tmdl` fails. The analysis helpers are public in
+  `pbip_model_forge.f_filters`.
 - **`pbip-forge i-filters --model M`** regenerates `i-Applied Filters` in
   `Helper Measures` from the y- selector tables, validates coverage before
   writing (`--skip-validation` to override) and replaces only the measure's
   expression. Exit 1 when the measure is missing or validation fails. The
   optional date block reads `Period: 3 Feb 2025 - 28 Feb 2025`.
 - Both editing commands keep each file's bytes outside the edit: line
-  endings (LF or CRLF, on every OS) and a UTF-8 BOM. The `*.bak` backup is
-  a byte copy of the file before the edit.
+  endings (LF or CRLF, on every OS) and a UTF-8 BOM. The backup is a byte
+  copy of the file before the edit.
 - Tests for all of the above (fictional fixtures). With tmdl-preflight
   installed (`uv run --group test pytest`) its integration tests run too;
   without it they skip.
 
+### Kept fixes (BUGFIX)
+
+Where these commands deliberately differ from the scripts they replace:
+
+- BUGFIX: f-filters looks for the gate chains only inside `f-All`.
+- BUGFIX: f-filters refuses a chain variable declared twice (no gate line
+  is written, a warning says why).
+- BUGFIX: f-filters writes gate lines only when both chains exist.
+- BUGFIX: f-filters adds terms before a trailing `//` or `--` line comment.
+- BUGFIX: f-filters escapes `"`, `]` and `'` in generated names.
+- BUGFIX: f-filters and i-filters keep line endings and BOM, and the backup
+  is a byte copy.
+- BUGFIX: an unexpected error in one model fails only that model in
+  f-filters; the other models still run.
+- BUGFIX: commented selector rows are ignored, and comments are stripped
+  before references are detected.
+- BUGFIX: the verbose f-filters line reads `Loading model index`, and the
+  warnings point at tmdl-preflight A005 for the f-measure shapes.
+
 ### Notes
 
-- A created `f-<Category>` measure is placed after the table's last measure
-  (so still before the trailing table annotations), which keeps measures
-  together; on a table with no measure it goes before the trailing
-  annotations.
-- Fact tables for `f-filters` are the loaded data tables (not calculated,
-  not x-/y-/z-/f-/i-/`__` helpers) that are not only on the one side of
-  relationships.
 - Only the bare `i-Applied Filters` measure is generated; older notes that
   mention four caption variants are out of date.
 

@@ -6,7 +6,7 @@ clone a report, or repair two helper measures of the selector pattern. All
 of them run on the standard library only.
 
 Commands that edit files (`f-filters`, `i-filters`) take `--dry-run` and
-keep a timestamped `*.bak` copy of the file they change unless
+keep a timestamped backup copy of the file they change unless
 `--no-backups` is given. The backup is a byte copy of the file before the
 edit. The edit keeps the file's line endings (a CRLF file stays CRLF, an LF
 file stays LF, on every OS) and a UTF-8 BOM; only the inserted or replaced
@@ -107,36 +107,60 @@ per analysis category in `f-Filters`, and an `f-All` measure with two
 chains of gate lines (`VAR temp_basic` joined with `&&`, `VAR temp_alt`
 joined with `||`).
 
-1. A fact table that a visible measure reads but no f- measure reads is
-   uncovered. Its categories come from the x- selector entries whose measure
-   reads it, joined on the group id to the rows of the first `z-Map*` table.
-   A fact with no category is skipped with a reason.
-2. For each category the f- measure is found as `f-<Category>`, then with
-   spaces as `_`, then without spaces. If none exists, `f-<Category>` is
-   created as `int(not ISEMPTY('<Fact>')) + ...` (hidden, display folder
-   `Visual-Level filters`, a stable lineage tag). If one exists, the terms
-   are appended to the last expression line that holds code (inside the
-   fence if fenced; before a trailing `//` or `--` comment) and a warning
-   is printed on stdout and stderr: hand-written shapes (an aggregator, a
-   SWITCH router, a display string) may need review.
-3. Every created category and every z-Map category that no live
-   `CONTAINSSTRING(all_cats, "<literal>")` gate of `f-All` matches (a literal that is a
-   substring of the name counts, as CONTAINSSTRING does) gets one line at the
-   end of each of `f-All`'s chains, provided its f- measure exists. Only
-   `f-All` is searched for the chains, so another measure's `temp_basic` is
-   never touched; when `f-All` declares a chain variable twice, nothing is
-   written and a warning says why. Categories without an f- measure are
-   listed as unresolved; no gate is written to a measure that does not
-   exist. Existing lines, commented ones included, are never edited. In the
-   written DAX a `"` in a category doubles to `""` and a `]` in a measure
-   name doubles to `]]`.
+1. **Fact tables.** A table is not a fact when its name starts with `_`,
+   with one letter and `-` (`w-`, `x-`, ...) or with a character that is not
+   a letter or digit, or contains the word `Measure`/`Measures`. Of the
+   rest, a fact has columns, is not a calculation group or field parameter,
+   has an M partition first, and holds no entered data (`Table.FromRows`,
+   `#table(`). A dimension on the one side of a relationship can be a fact.
+2. **Uncovered.** A fact is consumed when a user-facing measure reaches it
+   (directly or through the measures it references; comments and strings
+   are ignored). User-facing is decided by name: not `-`/`_`, not
+   `<letter>-` other than `z-`, no word starting with `test`; the hidden
+   flag does not matter. A fact reached by any `f-` measure is covered. A
+   fact read for data (not only inside `ISFILTERED`, `ISEMPTY`, ...) by a
+   user-facing x-Selector entry measure whose group maps to a category is
+   already gated. Uncovered = consumed, not covered, not gated.
+3. **Categories.** Entries come from the fenced source of the first
+   calculated partition of `x-Selector 1.tmdl` .. `x-Selector 9.tmdl`
+   (`("Label", NAMEOF('T'[Measure]), n, "group")`; commented lines are
+   ignored). The group id is looked up in the table
+   `z-Map Dimension-Measure Groupings` (category = cell 1, group = cell 3;
+   date and blank groups are ignored). A fact gets every category of every
+   entry that reaches it; a fact with none is skipped.
+4. **Measures.** For each category in sorted order, an existing
+   `f-<Category>` is extended (`+ int(not ISEMPTY('<Fact>'))` per fact, on
+   the last code line, before a trailing comment; a fenced expression gets
+   its closing fence at two tabs) and a warning is printed on stdout and
+   stderr. Otherwise `f-<Category>` is created (inline below 100
+   characters, else fenced; hidden, display folder `Visual-Level filters`,
+   lineage tag `<name>-auto-generated`) before the table's
+   `PBI_NavigationStepName`/`PBI_ResultType` annotation.
+5. **f-All gates.** Pass 1 gates the created categories, pass 2 every
+   category of the first `z-Map*` table (only when that file holds exactly
+   one payload). A category is already gated when a literal of an
+   uncommented `CONTAINSSTRING(all_cats, "...")` line of `temp_basic` is a
+   substring of it. Otherwise its measure (`f-<cat>`, then `_` for spaces,
+   then no spaces) gets one line at the end of each chain, followed by a
+   line of three tabs; categories without a measure are unresolved. Only
+   `f-All` is searched; a chain declared twice, or a missing `temp_alt`,
+   writes no gate line. In the written DAX `"`, `]` and `'` are doubled.
 
-A model without `f-Filters.tmdl` is an error (exit 1). A second run on a
+Output: a header line, then per model `── <label>  (<path>)`, the model's
+warnings, and a summary line
+`created=<c> extended=<e> skipped=<s> f-All=<fa>  -> OK` followed by one
+line per created, extended or skipped item. `-v` adds the steps (uncovered
+count, created DAX, gate passes, the written file). stderr always ends with
+a review note pointing at `tmdl-preflight check <model> --select A005`.
+
+A model without `f-Filters.tmdl` or without a `definition/tables` folder
+fails (exit 1); an unexpected error fails only that model (`-v` prints the
+traceback). The backup is `f-Filters.tmdl.backup_gapfill_<YYYYmmdd_HHMMSS>`,
+a byte copy with the original modification time. A second run on a
 repaired model changes nothing. Library: `pbip_model_forge.f_filters`
-(`live_gate_names`, `category_gated`, `find_gate_measure`,
-`declared_measures`, `map_table_categories`, `chain_span`, `uncovered_facts`,
-`fill_gaps`; `Result.combined_gates_added` lists the categories gated for a
-created measure).
+(`is_fact_table`, `is_user_facing`, `uncovered_facts`, `selector_entries`,
+`group_categories`, `registered_categories`, `live_gate_names`,
+`category_gated`, `find_gate_measure`, `chain_text`, `fill_gaps`).
 
 ## `pbip-forge i-filters`
 

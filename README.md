@@ -226,7 +226,7 @@ pbip-forge i-filters --model Acme.SemanticModel --dry-run             # i-Applie
 ```
 
 `f-filters` and `i-filters` edit files: run them with `--dry-run` first, in
-a git repository or on a copy. They keep a timestamped `.bak` of the file
+a git repository or on a copy. They keep a timestamped backup of the file
 they change unless `--no-backups` is given.
 
 ## Tests

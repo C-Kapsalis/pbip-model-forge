@@ -180,10 +180,14 @@ def _cmd_clone(args: argparse.Namespace) -> int:
     return clone_report_cli(args)
 
 
-def _model_targets(args: argparse.Namespace) -> list[Path]:
+def _model_targets(args: argparse.Namespace) -> list[tuple[str, Path]]:
+    """``(label, folder)`` per target: a ``--model`` path as given, or
+    ``<fleet>/<child>`` for each ``*.SemanticModel`` folder of ``--fleet``."""
     if args.model:
-        return [Path(m) for m in args.model]
-    return sorted(p for p in Path(args.fleet).glob("*.SemanticModel") if p.is_dir())
+        return [(m, Path(m)) for m in args.model]
+    fleet = args.fleet.rstrip("/\\") or args.fleet
+    return [(f"{fleet}/{p.name}", p)
+            for p in sorted(Path(args.fleet).glob("*.SemanticModel")) if p.is_dir()]
 
 
 def _cmd_f_filters(args: argparse.Namespace) -> int:

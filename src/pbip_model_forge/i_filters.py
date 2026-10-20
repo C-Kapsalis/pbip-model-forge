@@ -319,7 +319,7 @@ def run_cli(models: list[Path], dry_run: bool = False, backups: bool = True,
         print("error: no semantic model to process")
         return 1
     failed = 0
-    for model in models:
+    for _, model in models:
         res = update_caption(model, dry_run=dry_run, backups=backups, validate=validate)
         print(f"== {model}")
         print(f"  dimensions: {len(res.dimensions)}"
