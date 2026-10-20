@@ -170,21 +170,33 @@ pbip-forge i-filters --model M.SemanticModel [--model ...] | --fleet DIR
 ```
 
 Regenerates the `i-Applied Filters` caption measure in `Helper Measures`
-from the y- selector tables: one block per offered column, in selector order,
-skipping hidden columns, the `__Calendar` date spine, `__Comparison` tables
-and spacer columns. Each block shows `Column = a, b, c` for the selected
-values (at most 10, blank shown as `(Blank)`), or `Column is not x` when the
-column has more than 5 values and only 1 to 3 are excluded.
+from the `y-Selector*` and `y-Plot Specific*` tables. Every
+`NAMEOF('T'[c])` in those files is a candidate, ordered by the number that
+follows it (no number sorts last) and then by table and column, across all
+tables together; commented-out lines are ignored. The column `z`, columns
+containing `blank` and `__Calendar` tables are dropped, hidden columns are
+dropped, and a column the model does not declare is missing. Each block
+shows `Column = a, b, c` for the selected values (at most 10, blank shown as
+`(Blank)`), or `Column is not x` when the column has more than 5 values and
+only 1 to 3 are excluded. `Campaign Actual` is labelled `Campaign Name` and
+`Campaign Ad Group` `Ad Group`.
 
-Before writing, the measure is validated: every dimension must have its
-`ISFILTERED` test (100% coverage) and `ISFILTERED` and `CONCATENATEX` must
-be present; missing working variables, `TOPN` or line breaks are warnings.
-A failed validation writes nothing and exits 1; `--skip-validation` writes
-anyway. A host table without the measure is a failure (exit 1). Only the
-measure's expression is replaced; its properties and the rest of the file
-are kept.
+Before writing, the measure is validated: every dimension and every missing
+column must have its `ISFILTERED` test (100% coverage), and `ISFILTERED` and
+`CONCATENATEX` must be present. So a model without y- tables, or with a y-
+row on a column that does not exist, fails (exit 1) and nothing is written.
+`--skip-validation` leaves missing columns out; with no dimension at all it
+changes nothing. A missing `Helper Measures.tmdl` or measure fails the model.
 
-The library (`pbip_model_forge.i_filters`) also offers an HTML output, a
-count-only output, an optional date block and an explicit dimension order
-(`Options`). The date block reads `Period: 3 Feb 2025 - 28 Feb 2025` (one
-date when the range is a single day).
+Only the measure's expression is replaced (fenced, bare or inline form);
+everything else in the file stays byte for byte, and an unchanged file is
+neither rewritten nor backed up. The backup is
+`Helper Measures.tmdl.backup_<YYYYmmdd_HHMMSS>` (byte copy, original
+modification time). A dry run prints a preview (line and character counts,
+first and last lines of the old and new text). The per-model line reads
+`dims=<n> gen=1 updated=<u> failed=<f>  -> OK`; `-v` adds the four steps
+(discovery, generation, validation, update).
+
+The library (`pbip_model_forge.i_filters`) also writes the older caption
+shapes with `legacy_caption(dims, kind)`: `plain` (with a
+`Date = <min> to <max>` block first), `html_red`/`html_green` and `count`.

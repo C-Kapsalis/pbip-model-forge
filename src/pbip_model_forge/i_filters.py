@@ -3,35 +3,48 @@
 ``i-Applied Filters`` (in the ``Helper Measures`` table) is a text measure
 that lists every dimension filter currently applied, one line per filtered
 column, for a caption or tooltip. It goes stale as soon as a new dimension is
-offered in a y- selector table. This module rebuilds it from the selector
-tables, so every offered dimension is covered, validates the result, and
-replaces the measure's expression in place (properties are kept). The
-file's line endings and a UTF-8 BOM are kept; the backup is a byte copy.
+offered in a y- selector table. This module rebuilds it from the
+``y-Selector`` and ``y-Plot Specific`` tables, validates the result (every
+offered column needs its ``ISFILTERED`` test) and replaces the measure's
+expression in place. The file's line endings and a UTF-8 BOM are kept; the
+backup is a byte copy.
 
 Each dimension block reads, in DAX::
 
-    IF(ISFILTERED(col), <label> & (" = " & selected | " is not " & excluded) & CR LF)
+    IF(ISFILTERED(col), "<label>" & (" = " & selected | " is not " & excluded) & CR LF)
 
 The "is not" form is used when the column has more than ``invert_min_total``
-values and only ``invert_min``..``invert_max`` of them are excluded, which
-reads better than a long list of selected values. At most ``top_n`` selected
-values are listed. A blank value shows as ``(Blank)``.
+values and only ``invert_min``..``invert_max`` of them are excluded. At most
+``top_n`` selected values are listed. A blank value shows as ``(Blank)``.
+
+The library also writes the older caption shapes (a plain caption with a
+date block, an HTML caption in red or green, and a filter count); see
+:func:`legacy_caption`.
 """
 
 from __future__ import annotations
 
 import datetime as _dt
 import re
+import shutil
+import sys
+import traceback
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
 
 from . import tmdl_text as tt
 
 CAPTION_MEASURE = "i-Applied Filters"
 HOST_TABLE = "Helper Measures"
+SELECTOR_PREFIXES = ("y-Selector", "y-Plot Specific")
 DATE_SPINE_PREFIX = "__Calendar"
-LABELS = {"Campaign Actual": "Campaign Name"}
+LABELS = {"Campaign Actual": "Campaign Name", "Campaign Ad Group": "Ad Group",
+          "Landing Page": "Landing Page"}
+GROWTH_PREFIXES = ("Ticket", "_Play", "Dynamics")
+#: order of a selector row without a number after its NAMEOF
+NO_ORDER = 1_000_000_000
+RULE = "=" * 80
+THIN = "-" * 80
 
 
 @dataclass
@@ -40,18 +53,12 @@ class Options:
     invert_min_total: int = 5      # invert only when the column has MORE values than this
     invert_min: int = 1
     invert_max: int = 3
-    date_spine_prefix: str = DATE_SPINE_PREFIX
-    labels: dict[str, str] = field(default_factory=lambda: dict(LABELS))
-    output: str = "text"           # text | html | count
-    date_column: str | None = None  # e.g. "'__Calendar'[Date]" adds a date block
-    order: dict[str, int] | None = None  # "table[column]" -> sort key
 
 
 @dataclass(frozen=True)
 class Dimension:
     table: str
     column: str
-    cluster: bool = False
 
     @property
     def key(self) -> str:
@@ -65,135 +72,161 @@ class Dimension:
 # ---------------------------------------------------------------------------
 # Dimension discovery
 # ---------------------------------------------------------------------------
-def _selector_files(model_dir: Path) -> list[Path]:
-    return [p for p in tt.table_files(model_dir)
-            if (tt.table_name(p.read_text(encoding="utf-8")) or p.stem).startswith("y-")]
+_NAMEOF_RE = re.compile(r"NAMEOF\s*\(\s*('(?:[^']|'')+'|[A-Za-z_][A-Za-z0-9_]*)\s*\[([^\]]+)\]\s*\)",
+                        re.I)
 
 
-def _hidden_columns(model_dir: Path) -> set[str]:
-    hidden = set()
+def selector_refs(text: str) -> dict[tuple[str, str], int]:
+    """``(table, column)`` -> order for every NAMEOF in a selector file.
+
+    The order is the integer that follows the NAMEOF (after a comma, within
+    24 characters), else :data:`NO_ORDER`; a repeated ref keeps its smallest
+    order. Commented-out lines are ignored."""
+    plain = "\n".join("" if re.match(r"^\s*(//|--)", ln) else ln
+                      for ln in text.replace("\r\n", "\n").split("\n"))
+    out: dict[tuple[str, str], int] = {}
+    for hit in _NAMEOF_RE.finditer(plain):
+        after = re.match(r"\s*,\s*(-?\d+)", plain[hit.end():hit.end() + 24])
+        order = int(after.group(1)) if after else NO_ORDER
+        ref = (tt.unquote(hit.group(1)), hit.group(2))
+        out[ref] = min(order, out.get(ref, order))
+    return out
+
+
+def discover(model_dir: str | Path) -> tuple[list[Dimension], list[Dimension]]:
+    """``(dimensions, missing)`` offered by the y- selector tables.
+
+    All refs are sorted by (order, table, column). The column ``z``, columns
+    containing "blank" and ``__Calendar`` tables are dropped; a column the
+    model does not declare is MISSING; a hidden column is dropped."""
+    refs: dict[tuple[str, str], int] = {}
+    columns: dict[tuple[str, str], list[str]] = {}
     for path in tt.table_files(model_dir):
-        text = path.read_text(encoding="utf-8")
+        text = path.read_text(encoding="utf-8-sig")
         table = tt.table_name(text) or path.stem
-        for col, props in tt.column_props(text).items():
-            if "isHidden" in props:
-                hidden.add(f"{table}[{col}]")
-    return hidden
+        for col, props in tt.column_props(text.replace("\r\n", "\n")).items():
+            columns[(table, col)] = props
+        if table.startswith(SELECTOR_PREFIXES):
+            for ref, order in selector_refs(text).items():
+                refs[ref] = min(order, refs.get(ref, order))
+    dims: list[Dimension] = []
+    missing: list[Dimension] = []
+    for (table, column), _ in sorted(refs.items(), key=lambda kv: (kv[1], kv[0][0], kv[0][1])):
+        if column == "z" or "blank" in column.lower() or table.startswith(DATE_SPINE_PREFIX):
+            continue
+        props = columns.get((table, column))
+        if props is None:
+            missing.append(Dimension(table, column))
+        elif "isHidden" not in props and not any(p.startswith("isHidden:") and "true" in p
+                                                 for p in props):
+            dims.append(Dimension(table, column))
+    return dims, missing
 
 
-def _skip(table: str, column: str, opts: Options) -> bool:
-    low = column.lower()
-    return (table.startswith(opts.date_spine_prefix) or table.startswith("__Comparison")
-            or "blank" in low or "z_space" in low)
-
-
-def dimensions(model_dir: str | Path, opts: Options | None = None) -> list[Dimension]:
-    """Visible columns offered by the y- selector tables, in selector order.
-
-    Rows are ordered by their numeric order field within each table (tables
-    in file order); the date spine, comparison tables and spacer columns are
-    left out, duplicates keep their first position. A column whose name
-    contains ``Cluster`` is a cluster dimension."""
-    opts = opts or Options()
-    model_dir = Path(model_dir)
-    hidden = _hidden_columns(model_dir)
-    found: list[Dimension] = []
-    seen: set[str] = set()
-    for path in _selector_files(model_dir):
-        entries = []
-        for pos, fields in enumerate(tt.selector_rows(path.read_text(encoding="utf-8"))):
-            target = next((tt.nameof_target(f) for f in fields if tt.nameof_target(f)), None)
-            if target is None:
-                continue
-            order = next((float(f) for f in fields[2:3] if re.fullmatch(r"-?\d+(\.\d+)?", f)), pos)
-            entries.append((order, pos, target))
-        for _, _, (table, column) in sorted(entries):
-            dim = Dimension(table, column, cluster="cluster" in column.lower())
-            if dim.key in seen or dim.key in hidden or _skip(table, column, opts):
-                continue
-            seen.add(dim.key)
-            found.append(dim)
-    if opts.order:
-        rank = {d.key: opts.order.get(d.key, 10**9) for d in found}
-        found = sorted(found, key=lambda d: rank[d.key])  # stable: ties keep input order
-    return found
+def dimensions(model_dir: str | Path) -> list[Dimension]:
+    return discover(model_dir)[0]
 
 
 # ---------------------------------------------------------------------------
 # Generation
 # ---------------------------------------------------------------------------
-def _label(dim: Dimension, opts: Options) -> str:
-    if dim.cluster:
-        return f"[-{dim.column} Name]"
-    text = opts.labels.get(dim.column, dim.column)
-    return '"' + text.replace('"', '""') + '"'
+def _label(dim: Dimension) -> str:
+    return LABELS.get(dim.column, dim.column).replace('"', '""')
 
 
 def _block(dim: Dimension, opts: Options) -> str:
     col = dim.ref
-    item = f"[-{dim.column} Name]" if dim.cluster else col
-    shown = f'IF(ISBLANK({item}), "(Blank)", {item})'
-    if opts.output == "html":
-        head = f'"<span style=""font-weight:bold"">" & {_label(dim, opts)} & "</span>"'
-        brk = '"<br/>"'
-    else:
-        head, brk = _label(dim, opts), "UNICHAR(13) & UNICHAR(10)"
+    shown = f'IF(ISBLANK({col}), "(Blank)", {col} & "")'
     return "\n".join([
         "IF(",
         f"    ISFILTERED({col}),",
-        f"    VAR __sel = VALUES({col})",
-        f"    VAR __excl = EXCEPT(ALL({col}), __sel)",
-        "    VAR __exclCount = COUNTROWS(__excl)",
-        f"    VAR __invert = COUNTROWS(ALL({col})) > {opts.invert_min_total}"
-        f" && __exclCount >= {opts.invert_min} && __exclCount <= {opts.invert_max}",
-        f"    VAR __top = TOPN({opts.top_n}, __sel, {col}, ASC)",
-        f'    VAR __selList = CONCATENATEX(__top, {shown}, ", ", {col}, ASC)',
-        f'    VAR __exclList = CONCATENATEX(__excl, {shown}, ", ", {col}, ASC)',
-        f'    RETURN {head} & IF(__invert, " is not ", " = ")'
-        f" & IF(__invert, __exclList, __selList) & {brk}",
+        f"    VAR ___f = FILTERS({col})",
+        f"    VAR ___x = EXCEPT(ALL({col}), ___f)",
+        "    VAR ___nX = COUNTROWS(___x)",
+        f"    VAR ___inv = COUNTROWS(ALL({col})) > {opts.invert_min_total}"
+        f" && ___nX >= {opts.invert_min} && ___nX <= {opts.invert_max}",
+        f"    VAR ___t = TOPN({opts.top_n}, ___f, {col})",
+        f'    VAR ___d = CONCATENATEX(___t, {shown}, ", ")',
+        f'    VAR ___dx = CONCATENATEX(___x, {shown}, ", ", {col}, ASC)',
+        f'    RETURN "{_label(dim)}" & IF(___inv, " is not ", " = ")'
+        " & IF(___inv, ___dx, ___d) & UNICHAR(13) & UNICHAR(10)",
         ")",
     ])
 
 
-#: FORMAT pattern of the dates in the period line, e.g. "3 Feb 2025"
-DATE_FORMAT = "d mmm yyyy"
+def _measure_head(name: str) -> str:
+    return f"measure '{name.replace(chr(39), chr(39) * 2)}' =\n"
 
 
-def _date_block(opts: Options) -> str:
-    """One "Period: <first> - <last>" line (a single date when the range is
-    one day) while the calendar column is filtered."""
-    col = opts.date_column
-    first, last = (f'FORMAT({v}, "{DATE_FORMAT}")' for v in ("__first", "__last"))
-    brk = '"<br/>"' if opts.output == "html" else "UNICHAR(13) & UNICHAR(10)"
-    return "\n".join([
-        "IF(",
-        f"    ISFILTERED({col}),",
-        f"    VAR __first = MIN({col})",
-        f"    VAR __last = MAX({col})",
-        f'    RETURN "Period: " & IF(__first = __last, {first}, {first} & " - " & {last})'
-        f" & {brk}",
-        ")",
-    ])
-
-
-def generate_expression(dims: list[Dimension], opts: Options | None = None) -> str:
-    """The DAX expression of the caption measure for ``dims``."""
+def generate_caption(dims: list[Dimension], opts: Options | None = None,
+                     name: str = CAPTION_MEASURE) -> str:
+    """The full generated text: ``measure '<name>' =``, one block per
+    dimension joined by `` &``, and a final newline."""
     opts = opts or Options()
-    if opts.output == "count":
-        flags = " + ".join(f"INT(ISFILTERED({d.ref}))" for d in dims) or "0"
-        return "\n".join([
-            f"VAR __active = {flags}",
-            'RETURN IF(__active = 0, "No filters applied", __active & " filters active")',
-        ])
-    blocks = [_block(d, opts) for d in dims]
-    if opts.date_column:
-        blocks.append(_date_block(opts))
-    if not blocks:
-        return '""'
-    body = " &\n".join(blocks)
-    if opts.output == "html":
-        body = '"<div style=""color:#404040"">" &\n' + body + ' &\n"</div>"'
-    return body
+    return _measure_head(name) + " &\n".join(_block(d, opts) for d in dims) + "\n"
+
+
+def _date_block(cal: str, html: bool) -> str:
+    ref = f"'{cal.replace(chr(39), chr(39) * 2)}'[Date]"
+    pad = "    "
+    ret = ('RETURN "<span style=\'font-weight: bold\'>Date</span> = " & ___dateRange & "<br/>"'
+           if html else 'RETURN "Date = " & ___dateRange & UNICHAR(13) & UNICHAR(10)')
+    return "\n".join([
+        "IF(",
+        f"{pad}ISFILTERED({ref}),",
+        f"{pad}VAR ___dateMin = MIN({ref})",
+        f"{pad}VAR ___dateMax = MAX({ref})",
+        f'{pad}VAR ___dateRange = IF(___dateMin = ___dateMax, FORMAT(___dateMin, "yyyy-mm-dd"), '
+        'FORMAT(___dateMin, "yyyy-mm-dd") & " to " & FORMAT(___dateMax, "yyyy-mm-dd"))',
+        f"{pad}{ret}",
+        ") &" if html else ")",
+    ])
+
+
+def _html_block(dim: Dimension, opts: Options) -> str:
+    col = dim.ref
+    return "\n".join([
+        "IF(",
+        f"    ISFILTERED({col}),",
+        f"    VAR ___f = FILTERS({col})",
+        f"    VAR ___t = TOPN({opts.top_n}, ___f, {col})",
+        f'    VAR ___d = CONCATENATEX(___t, {col}, ", ")',
+        f"    RETURN \"<span style='font-weight: bold'>{_label(dim)}</span>\""
+        ' & " = " & ___d & "<br/>"',
+        ") &",
+    ])
+
+
+def legacy_caption(dims: list[Dimension], kind: str = "plain", name: str = CAPTION_MEASURE,
+                   calendar: str = DATE_SPINE_PREFIX, date_block: bool = True,
+                   opts: Options | None = None) -> str:
+    """An older caption shape: ``plain`` (date block first, then the live
+    blocks), ``html_red``/``html_green`` (HTML text) or ``count``."""
+    opts = opts or Options()
+    if kind == "plain":
+        blocks = ([_date_block(calendar, html=False)] if date_block else [])
+        blocks += [_block(d, opts) for d in dims]
+        return _measure_head(name) + " &\n".join(blocks) + "\n"
+    if kind in ("html_red", "html_green"):
+        colour = kind.split("_")[1]
+        indent = " " * 13
+        parts = ["\"<div style='font-family: 'Segoe UI Light', 'Segoe UI', Arial;\n"
+                 f"{indent}font-size: 8px;\n{indent}font-weight: 300;\n"
+                 f"{indent}line-height: 1.2;\n{indent}color: {colour};'>\" &"]
+        if date_block:
+            parts.append(_date_block(calendar, html=True))
+        parts += [_html_block(d, opts) for d in dims]
+        parts.append('"</div>"')
+        return _measure_head(name) + "\n".join(parts) + "\n"
+    if kind == "count":
+        cal_ref = f"'{calendar.replace(chr(39), chr(39) * 2)}'[Date]"
+        refs = ([cal_ref] if date_block else []) + [d.ref for d in dims]
+        terms = " +\n".join(f"    IF(ISFILTERED({r}), 1, 0)" for r in refs)
+        return (_measure_head(name) + "VAR ___totalActiveFilters =\n" + terms + "\n\n"
+                "RETURN\nIF(\n    ___totalActiveFilters > 0,\n"
+                '    "🔍 " & ___totalActiveFilters & " filters active",\n'
+                '    "ℹ️ No filters applied"\n)\n')
+    raise ValueError(f"unknown caption kind: {kind}")
 
 
 # ---------------------------------------------------------------------------
@@ -204,139 +237,310 @@ class Validation:
     coverage_percent: float
     errors: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+    found: int = 0
 
     @property
     def ok(self) -> bool:
-        return self.coverage_percent >= 100.0 and not self.errors
+        return self.coverage_percent == 100.0 and not self.errors
 
 
-def validate_caption(expression: str, dims: list[Dimension]) -> Validation:
-    """Check a generated caption before it is written."""
-    targets = {(t, c) for t, c in re.findall(
-        r"ISFILTERED\(\s*'((?:[^']|'')+)'\[([^\]]+)\]\s*\)", expression)}
-    targets = {(t.replace("''", "'"), c) for t, c in targets}
-    covered = sum((d.table, d.column) in targets for d in dims)
-    coverage = 100.0 if not dims else round(100.0 * covered / len(dims), 2)
-    res = Validation(coverage)
-    if dims:
-        for needle in ("ISFILTERED", "CONCATENATEX"):
-            if needle not in expression:
-                res.errors.append(f"{needle} missing")
-        for needle in ("__sel", "__excl", "__invert"):
-            if needle not in expression:
-                res.warnings.append(f"working variable {needle} missing")
-        if "TOPN" not in expression:
-            res.warnings.append("TOPN missing")
-        if "UNICHAR(13)" not in expression and "<br/>" not in expression:
-            res.warnings.append("no CR line break")
-    for dim in dims:
-        if dim.cluster and f"[-{dim.column} Name]" not in expression:
-            res.errors.append(f"cluster name measure [-{dim.column} Name] not referenced")
-    if coverage < 100.0:
-        missing = [d.key for d in dims if (d.table, d.column) not in targets]
-        res.errors.append(f"coverage {coverage}%: no ISFILTERED for {', '.join(missing)}")
+_ISFILTERED_RE = re.compile(r"ISFILTERED\(\s*('(?:[^']|'')+'|[A-Za-z_][A-Za-z0-9_]*)\[([^\]]+)\]\s*\)",
+                            re.I)
+
+
+def validate_caption(text: str, expected: list[Dimension], kind: str = "plain_text") -> Validation:
+    """Check generated caption text before it is written.
+
+    Coverage is the share of ``expected`` columns that appear as an
+    ``ISFILTERED`` target (0.0 when nothing is expected); it must be 100.
+    ``ISFILTERED(`` and (except for ``count``) ``CONCATENATEX(`` must be
+    present. The working variables, ``TOPN(`` and a line break are warnings."""
+    targets = {(tt.unquote(t).lower(), c.lower()) for t, c in _ISFILTERED_RE.findall(text)}
+    keys = {(d.table.lower(), d.column.lower()) for d in expected}
+    covered = sum(k in targets for k in keys)
+    coverage = 100.0 * covered / len(keys) if keys else 0.0
+    res = Validation(coverage, found=len(_ISFILTERED_RE.findall(text)))
+    if coverage != 100.0:
+        res.errors.append(f"coverage {coverage:.1f}%")
+    if "ISFILTERED(" not in text:
+        res.errors.append("no ISFILTERED( in the generated DAX")
+    if kind == "count":
+        return res
+    if "CONCATENATEX(" not in text:
+        res.errors.append("no CONCATENATEX( in the generated DAX")
+    if kind.startswith("html"):
+        if "<br/>" not in text and "<br>" not in text:
+            res.warnings.append("no <br/> line break")
+        if "style=" not in text:
+            res.errors.append("no style= attribute")
+        colour = kind.split("_")[-1]
+        if colour in ("red", "green") and f"color: {colour}" not in text \
+                and f"color:{colour}" not in text:
+            res.warnings.append(f"no color: {colour}")
+        return res
+    if not all(v in text for v in ("VAR ___f =", "VAR ___t =", "VAR ___d =")):
+        res.warnings.append("working variables ___f/___t/___d missing")
+    if "TOPN(" not in text:
+        res.warnings.append("no TOPN(")
+    if "UNICHAR(13)" not in text:
+        res.warnings.append("no UNICHAR(13) line break")
     return res
 
 
 # ---------------------------------------------------------------------------
 # Writing
 # ---------------------------------------------------------------------------
-def replace_expression(text: str, measure: str, expression: str) -> str | None:
-    """``text`` with ``measure``'s expression replaced by a fenced block.
+_DECL_RE = re.compile(r"^(\s*)measure\s+('(?:[^']|'')+'|\"[^\"]+\"|[^\s=]+)\s*=(.*)$")
 
-    Properties and everything outside the measure are kept byte for byte.
-    Returns None when the measure is not declared."""
-    lines = tt.split_lines(text)
-    block = next((b for b in tt.measure_blocks(lines) if b.name == measure), None)
-    if block is None:
+
+def _find_decl(lines: list[str], measure: str) -> tuple[int, re.Match] | None:
+    for i, line in enumerate(lines):
+        hit = _DECL_RE.match(line)
+        if hit and tt.unquote(hit.group(2)) == measure:
+            return i, hit
+    return None
+
+
+def _fence_line(line: str) -> str:
+    if not line.strip():
+        return ""
+    rest = line
+    while True:
+        if rest.startswith("    "):
+            rest = rest[4:]
+        elif rest.startswith("\t"):
+            rest = rest[1:]
+        else:
+            break
+    return ("\t\t\t" if rest.startswith(") &") or rest == ")" else "\t\t\t\t\t") + rest
+
+
+def replace_caption(text: str, measure: str, generated: str) -> tuple[str, int, int] | None:
+    """``(new text, old line count, new line count)`` with the measure's
+    expression replaced by the generated text (whose first line, the
+    ``measure`` line, is never written). None when the measure is missing."""
+    lines = text.split("\n")
+    found = _find_decl(lines, measure)
+    if found is None:
         return None
-    head = tt.MEASURE_RE.match(lines[block.start])
-    decl = f"\tmeasure {head.group(1)} = ```"
-    body = [f"\t\t\t{ln}" if ln.strip() else "" for ln in expression.split("\n")]
-    if block.expr_lines:
-        last = block.expr_lines[-1] + (2 if block.fenced else 1)
+    i, hit = found
+    indent, token, rest = hit.group(1), hit.group(2), hit.group(3)
+    gen = generated.split("\n")
+    if rest.strip() == "```":
+        close = next((k for k in range(i + 1, len(lines)) if lines[k].strip() == "```"), None)
+        if close is None:
+            return None
+        inner = lines[i + 1:close]
+        a = 0
+        while a < len(inner) and not inner[a].strip():
+            a += 1
+        b = len(inner)
+        while b > a and not inner[b - 1].strip():
+            b -= 1
+        body = [_fence_line(ln) for ln in gen[1:]]
+        new = lines[:i + 1] + inner[:a] + body + inner[b:] + lines[close:]
+        return "\n".join(new), b - a, len(body)
+    while gen and not gen[0].strip():
+        gen.pop(0)
+    while gen and not gen[-1].strip():
+        gen.pop()
+    gen = gen[1:]
+    if not gen:
+        return text, 0, 0
+    end = next((k for k in range(i + 1, len(lines)) if re.match(r"^\t{0,2}\S", lines[k])),
+               len(lines))
+    while end - 1 > i and not lines[end - 1].strip():
+        end -= 1
+    if rest.strip() and len(gen) == 1:
+        replacement = [f"{indent}measure {token} = {gen[0].strip()}"]
     else:
-        last = block.start + 1
-    new = [decl] + body + ["\t\t\t```"]
-    return "\n".join(lines[:block.start] + new + lines[last:])
+        replacement = [f"{indent}measure {token} ="]
+        replacement += [f"\t\t\t{ln}" if ln.strip() else "" for ln in gen]
+    new = lines[:i] + replacement + lines[end:]
+    return "\n".join(new), end - i, len(replacement)
+
+
+def _old_span(text: str, measure: str) -> str | None:
+    lines = text.split("\n")
+    found = _find_decl(lines, measure)
+    if found is None:
+        return None
+    i, hit = found
+    start = sum(len(ln) + 1 for ln in lines[:i]) + hit.start(0) + len(hit.group(1))
+    stop = re.compile(r"\n(?=(?:measure|column|table)\s)").search(text, start)
+    return text[start:stop.start() if stop else len(text)]
+
+
+def _listing(title: str, text: str) -> list[str]:
+    lines = text.split("\n")
+    out = [f"{title} (first 5 lines):"] + [f"  | {ln}" for ln in lines[:5]]
+    if len(lines) > 10:
+        out.append(f"  | ... ({len(lines) - 10} more lines)")
+    out += [f"{title} (last 5 lines):"] + [f"  | {ln}" for ln in lines[-5:]]
+    return out
+
+
+def preview(old: str | None, new: str, measure: str = CAPTION_MEASURE,
+            host: str = f"{HOST_TABLE}.tmdl") -> list[str]:
+    """The dry-run preview lines."""
+    out = ["", RULE, "PREVIEW: Measure Updates", RULE, "", f"Measure: {measure}", THIN]
+    if old is None:
+        out += [f"❌ NOT FOUND in {host}", ""]
+    else:
+        ol, oc, nl, nc = old.count("\n"), len(old), new.count("\n"), len(new)
+        out += [f"Original: {ol} lines, {oc} characters",
+                f"New:      {nl} lines, {nc} characters",
+                f"Change:   {nl - ol:+d} lines, {nc - oc:+d} characters", ""]
+        out += _listing("Original", old) + [""] + _listing("New", new) + [""]
+    return out + [RULE, ""]
 
 
 @dataclass
 class Result:
     model: Path
     dimensions: list[Dimension] = field(default_factory=list)
-    generated: list[str] = field(default_factory=list)
+    missing: list[Dimension] = field(default_factory=list)
+    generated: str = ""
     updated: list[str] = field(default_factory=list)
-    failed: list[tuple[str, str]] = field(default_factory=list)
-    warnings: list[str] = field(default_factory=list)
+    failed: list[str] = field(default_factory=list)
+    error: str | None = None
+    validation: Validation | None = None
     backup: Path | None = None
 
     @property
     def ok(self) -> bool:
-        return not self.failed
+        return self.error is None
+
+
+def _say(*lines: str) -> None:
+    for line in lines:
+        print(line)
+
+
+def _banner(title: str) -> None:
+    _say("", RULE, title, RULE, "")
 
 
 def update_caption(model_dir: str | Path, dry_run: bool = False, backups: bool = True,
-                   validate: bool = True, opts: Options | None = None) -> Result:
+                   validate: bool = True, verbose: bool = False,
+                   opts: Options | None = None) -> Result:
     """Regenerate ``i-Applied Filters`` for one model."""
-    opts = opts or Options()
     model_dir = Path(model_dir)
     res = Result(model_dir)
-    host = model_dir / "definition" / "tables" / f"{HOST_TABLE}.tmdl"
-    if not host.is_file():
-        res.failed.append((CAPTION_MEASURE, f"{host.name} not found"))
-        return res
-    res.dimensions = dimensions(model_dir, opts)
-    expr = generate_expression(res.dimensions, opts)
-    res.generated.append(CAPTION_MEASURE)
+    res.dimensions, res.missing = discover(model_dir)
+    if verbose:
+        _banner("STEP 1: Dimension Discovery")
+        growth = sum(d.table.startswith(GROWTH_PREFIXES) for d in res.dimensions)
+        _say("", f"✅ Discovered {len(res.dimensions)} dimensions",
+             f"   Performance dimensions: {len(res.dimensions) - growth}",
+             f"   Growth dimensions: {growth}", "   Cluster dimensions: 0")
+
+    res.generated = generate_caption(res.dimensions, opts)
+    if verbose:
+        _banner("STEP 2: DAX Generation")
+        _say("📝 Generating the required measure", "", "✅ Generated 1 measures",
+             f"   {CAPTION_MEASURE}: {res.generated.count(chr(10))} lines, "
+             f"{len(res.generated):,} characters")
+
     if validate:
+        expected = res.dimensions + res.missing
+        if verbose:
+            _banner("STEP 3: Validation")
+            _say("", f"📋 Validating: {CAPTION_MEASURE}",
+                 f"🔍 Validating coverage for {len(expected)} dimensions")
         # looked up on the module at call time so a caller can swap the validator
-        verdict: Any = globals()["validate_caption"](expr, res.dimensions)
-        res.warnings.extend(getattr(verdict, "warnings", []) or [])
-        if verdict.coverage_percent < 100 or verdict.errors:
-            reasons = list(verdict.errors) or [f"coverage {verdict.coverage_percent}%"]
-            res.failed.append((CAPTION_MEASURE, "validation failed: " + "; ".join(reasons)))
+        verdict = globals()["validate_caption"](res.generated, expected)
+        res.validation = verdict
+        passed = verdict.coverage_percent == 100.0 and not verdict.errors
+        if verbose:
+            _say(f"   Found {getattr(verdict, 'found', 0)} ISFILTERED checks in DAX",
+                 "🔍 Validating DAX patterns for plain_text",
+                 f"{'✅ PASS' if passed else '❌ FAIL'}: {CAPTION_MEASURE} "
+                 f"({verdict.coverage_percent:.1f}% coverage)")
+        if not passed:
+            res.error = "Validation failed - see details above"
+            if not verbose:
+                _say("", "❌ Validation failed. Run with --verbose for details.")
             return res
-    source = tt.read_source(host)
-    original = source.text
-    updated = replace_expression(original, CAPTION_MEASURE, expr)
-    if updated is None:
-        res.failed.append((CAPTION_MEASURE, f"measure not found in {host.name}"))
+        if verbose:
+            _say("", "✅ All validations passed")
+    elif verbose:
+        _say("", "⏭️  Skipping validation (--skip-validation)")
+
+    host = model_dir / "definition" / "tables" / f"{HOST_TABLE}.tmdl"
+    if verbose:
+        _banner("STEP 4: Preview Changes (Dry-Run)" if dry_run else "STEP 4: Update Measures")
+    if dry_run:
+        if host.is_file():
+            text = tt.read_source(host).text
+            _say(*preview(_old_span(text, CAPTION_MEASURE), res.generated))
+        else:
+            res.error = f"Helper Measures file not found: {host}"
+        if verbose and res.ok:
+            _say("", "✅ Dry-run completed - no changes applied")
         return res
-    if updated != original:
-        res.updated.append(CAPTION_MEASURE)
-        if not dry_run:
-            if backups:
-                stamp = _dt.datetime.now().strftime("%Y%m%d-%H%M%S")
-                res.backup = host.with_name(f"{host.name}.{stamp}.bak")
-            tt.write_edit(source, updated, backup=res.backup)
+
+    if not host.is_file():
+        res.error = f"Helper Measures file not found: {host}"
+    elif res.dimensions:
+        if verbose:
+            _say(f"📖 Reading: {host}")
+        source = tt.read_source(host)
+        original = source.text
+        replaced = replace_caption(original, CAPTION_MEASURE, res.generated)
+        if backups and (replaced is None or replaced[0] != original):
+            stamp = _dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+            res.backup = host.with_name(f"{host.name}.backup_{stamp}")
+            shutil.copy2(host, res.backup)
+            if verbose:
+                _say(f"💾 Backup created: {res.backup}")
+        if verbose:
+            _say("", f"🔄 Updating: {CAPTION_MEASURE}")
+        if replaced is None:
+            res.failed.append(CAPTION_MEASURE)
+            res.error = f"Failed to update: {CAPTION_MEASURE}"
+            if verbose:
+                _say(f"   ❌ Failed: {res.error}")
+        else:
+            new_text, old_n, new_n = replaced
+            if verbose:
+                _say(f"   ✅ Updated: {old_n} lines → {new_n} lines")
+            if new_text != original:
+                res.updated.append(CAPTION_MEASURE)
+                tt.write_edit(source, new_text)
+                if verbose:
+                    _say("", f"✅ Wrote updated file: {host}")
+    if verbose:
+        if res.ok:
+            _say("", f"✅ Successfully updated {len(res.updated)} measures")
+        else:
+            _say("", f"❌ Update completed with errors: {res.error}")
     return res
 
 
-def run_cli(models: list[Path], dry_run: bool = False, backups: bool = True,
+def run_cli(targets: list[tuple[str, Path]], dry_run: bool = False, backups: bool = True,
             validate: bool = True, verbose: bool = False) -> int:
-    if not models:
-        print("error: no semantic model to process")
-        return 1
+    """Regenerate the caption for ``(label, model folder)`` targets."""
+    _say(f"i-filter update — {len(targets)} target(s); mode: {'DRY-RUN' if dry_run else 'APPLY'}")
     failed = 0
-    for _, model in models:
-        res = update_caption(model, dry_run=dry_run, backups=backups, validate=validate)
-        print(f"== {model}")
-        print(f"  dimensions: {len(res.dimensions)}"
-              + (f" ({', '.join(d.key for d in res.dimensions)})" if res.dimensions else ""))
-        print(f"  generated: {len(res.generated)}  updated: {len(res.updated)}"
-              f"  failed: {len(res.failed)}")
-        for name, why in res.failed:
-            print(f"  FAILED {name}: {why}")
-        for warning in res.warnings:
-            print(f"  warning: {warning}")
-        if res.updated and dry_run:
-            print("  dry run: nothing written")
-            if verbose:
-                print(generate_expression(res.dimensions))
-        elif res.updated:
-            print(f"  wrote {HOST_TABLE}.tmdl" + (f" (backup {res.backup.name})" if res.backup else ""))
-        elif res.ok:
-            print("  no change")
+    for label, path in targets:
+        tables = Path(path) / "definition" / "tables"
+        if not tables.is_dir():
+            print("", file=sys.stderr)
+            print(f"[SKIP] {label}: {tables} not found", file=sys.stderr)
+            failed += 1
+            continue
+        _say("", f"── {label}  ({Path(path).resolve()})")
+        try:
+            res = update_caption(path, dry_run=dry_run, backups=backups and not dry_run,
+                                 validate=validate, verbose=verbose)
+        except Exception as exc:
+            _say("", f"❌ Error: {exc}")
+            traceback.print_exc()
+            res = Result(Path(path), error=str(exc))
+        status = "OK" if res.ok else f"FAIL: {res.error}"
+        _say(f"   dims={len(res.dimensions)} gen=1 updated={len(res.updated)} "
+             f"failed={len(res.failed)}  -> {status}")
         failed += not res.ok
+    _say("")
     return 1 if failed else 0

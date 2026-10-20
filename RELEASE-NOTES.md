@@ -60,10 +60,17 @@ and `build`. See [docs/model-commands.md](docs/model-commands.md).
   without `f-Filters.tmdl` fails. The analysis helpers are public in
   `pbip_model_forge.f_filters`.
 - **`pbip-forge i-filters --model M`** regenerates `i-Applied Filters` in
-  `Helper Measures` from the y- selector tables, validates coverage before
-  writing (`--skip-validation` to override) and replaces only the measure's
-  expression. Exit 1 when the measure is missing or validation fails. The
-  optional date block reads `Period: 3 Feb 2025 - 28 Feb 2025`.
+  `Helper Measures` from the `y-Selector`/`y-Plot Specific` tables: refs
+  sorted by their order number, then table and column, across all tables;
+  `z`, `blank` columns, `__Calendar` and hidden columns dropped. Validation
+  (100% `ISFILTERED` coverage of the dimensions and of any missing column)
+  gates the write, so zero dimensions or a missing column exit 1 with
+  nothing written; `--skip-validation` overrides. Only the measure's
+  expression is replaced (fenced, bare or inline). A dry run prints a
+  preview; the per-model line is `dims=<n> gen=1 updated=<u> failed=<f>`.
+  Backup `Helper Measures.tmdl.backup_<YYYYmmdd_HHMMSS>` unless
+  `--no-backups`. The library keeps the older plain (with a
+  `Date = <min> to <max>` block), HTML and count captions.
 - Both editing commands keep each file's bytes outside the edit: line
   endings (LF or CRLF, on every OS) and a UTF-8 BOM. The backup is a byte
   copy of the file before the edit.
@@ -83,6 +90,9 @@ Where these commands deliberately differ from the scripts they replace:
 - BUGFIX: f-filters escapes `"`, `]` and `'` in generated names.
 - BUGFIX: f-filters and i-filters keep line endings and BOM, and the backup
   is a byte copy.
+- BUGFIX: i-filters does not rewrite or back up an unchanged file.
+- BUGFIX: i-filters escapes `'` (table names) and `"` (labels) in the
+  caption.
 - BUGFIX: an unexpected error in one model fails only that model in
   f-filters; the other models still run.
 - BUGFIX: commented selector rows are ignored, and comments are stripped
@@ -92,8 +102,8 @@ Where these commands deliberately differ from the scripts they replace:
 
 ### Notes
 
-- Only the bare `i-Applied Filters` measure is generated; older notes that
-  mention four caption variants are out of date.
+- Only the bare `i-Applied Filters` measure is written by the command; the
+  other caption shapes are library functions.
 
 ## 1.1.0 (2026-10-12): Born compliant
 
