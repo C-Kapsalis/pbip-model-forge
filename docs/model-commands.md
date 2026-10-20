@@ -22,11 +22,12 @@ pbip-forge table dump --b64 STRING [--max-rows N]
 
 Power BI stores an "Enter data" table as `Binary.FromText("<base64>")`: a
 raw DEFLATE stream of a JSON array of rows. `table dump` decodes the FIRST
-such payload in the file (the file is never written) and prints the column
-names (row 0), the number of data rows, the first `N` data rows (default
-20) numbered from 1, and how many rows were left out. An empty array prints
-one "no data" line. A payload that does not decode prints one error line and
-exits 1.
+such payload in the file (the file is never written) and prints it as the
+original does: the column names (row 0), the data-row count, the first `N`
+data rows (default 20) numbered from 1, and how many rows were left out. An
+empty array prints one "No data" line. A file with no payload prints
+"No binary data found in <file>" on standard error; a payload that does not
+decode prints "Error decrypting: <the error>". Both exit 1.
 
 Library: `enter_data.decode_file(path)`, `enter_data.decode_b64_or_none(b64)`
 and `enter_data.encode_rows(rows, parity_json=False)`. The default encoding
@@ -43,16 +44,19 @@ pbip-forge report blank --client DIR --model NAME [NAME ...] [--name REPORT]
                         [--full] [--theme NAME] [--theme-file PATH] [--dry-run]
 ```
 
-Creates `<DIR>/<REPORT>.Report` bound to `<DIR>/<NAME>.SemanticModel`.
-Without `--full` it writes the minimal two-file report that `build` writes
-(`.platform` and `definition.pbir`). With `--full` it writes a complete PBIR
-definition, which Fabric Git integration and deployment pipelines need:
-`definition/report.json`, `definition/version.json`, one page
-(`Page 1`, 1280 x 720) listed in `definition/pages/pages.json`,
-`.pbi/localSettings.json`, and the `bookmarks` and `StaticResources` folders.
+Creates `<DIR>/<REPORT>.Report` bound to `<DIR>/<NAME>.SemanticModel`. It
+writes a complete PBIR definition, which Fabric Git integration and
+deployment pipelines need: `definition/report.json`,
+`definition/version.json`, one page (`Page 1`, 1280 x 720) listed in
+`definition/pages/pages.json`, `.pbi/localSettings.json`, and the
+`bookmarks` and `StaticResources` folders. `--full` is accepted and has no
+further effect; `build` keeps its own two-file report.
 
-- A model folder that does not exist is a warning and is skipped.
-- An existing report folder is never overwritten ("already exists").
+Every file is written with two-space indentation, a space after the keys and
+no trailing newline, and non-ASCII characters are escaped.
+
+- A model folder that does not exist is skipped.
+- An existing report folder is never overwritten.
 - `--theme` names the base theme (default `CY25SU12`). The theme JSON is
   copied from `--theme-file`, or else from another report of the same client
   that ships it; when neither exists, report.json still names the theme and
@@ -61,39 +65,48 @@ definition, which Fabric Git integration and deployment pipelines need:
 - Exit 0 unless writing a report failed; a missing `--client` folder exits 1.
   An error while writing one report (of any kind) is printed, marks that
   report failed and the remaining models are still processed.
+- The console output is the original's: a banner, one block per model, and a
+  footer that says whether every report was created.
 
 ## `pbip-forge clone-report`
 
 ```
-pbip-forge clone-report TEMPLATE.Report NAME [--out-dir DIR] [--model PATH]
+pbip-forge clone-report TEMPLATE [NAME] [TARGET_DIR] [SEMANTIC_MODEL]
                         [--force] [--logical-id UUID] [--strict]
+                        [--expect-visuals N] [--expect-bookmark NAME]
 ```
 
-Copies a finished report folder (hidden files included) to
-`<DIR>/<NAME>.Report` (DIR defaults to the template's parent folder), then:
+Copies a finished report folder (hidden files included) into `TARGET_DIR`,
+the REPORT FOLDER ITSELF, used exactly as given (no `.Report` is added; it
+defaults to `<cwd>/<NAME>`). `NAME` defaults to `MyCompany-Analytics` and
+`SEMANTIC_MODEL` is a free string that defaults to `<NAME>.SemanticModel`
+(`--model` is the same argument). There is no existence check on the model.
 
-- sets `metadata.displayName` to NAME and `config.logicalId` to a new random
-  UUID (or `--logical-id`) in `.platform`, keeping every other key, the key
-  order and the indentation;
-- with `--model`, points `definition.pbir` at that model, written as a path
-  relative to the new report. A relative `--model` is read from the new
-  report folder, the way `definition.pbir` stores it: `--model
-  ../Roastery.SemanticModel` names a sibling of the copy, whatever the
-  current directory. The path must name an existing `*.SemanticModel`
-  folder, or nothing is written (exit 2).
+- The copy keeps a `.backup` of every file it edits: `definition.pbir` and
+  `.platform`.
+- `definition.pbir` points at `../<SEMANTIC_MODEL>`; `.platform` gets a new
+  random lowercase UUID (or `--logical-id`) and the new display name. The
+  value edits are JSON-aware: only the value's bytes change, the formatting
+  and the key order stay as they are.
+- When the target exists, the command asks
+  "Continue and overwrite? (y/N): " and only `y` or `Y` continues.
+  `--force` answers the prompt with yes.
+- The four required files (`definition.pbir`, `.platform`,
+  `definition/report.json`, `definition/version.json`) are checked in order;
+  a missing one ends the run with exit 1, the copy staying.
+- `--expect-visuals N` counts the copy's visual files and warns when the
+  count differs; `--expect-bookmark NAME` checks that the bookmark exists.
+  Both turn on the template's banner and instructions block.
+- Every log line carries a coloured tag (`[INFO]`, `[SUCCESS]`, `[WARNING]`,
+  `[ERROR]`).
 
 Two copies with the same `logicalId` collide on Fabric Git sync; the clone
-always gets its own. No backup files are written into the copy.
+always gets its own.
 
-Exit codes: 0 copied; 1 the target exists (without `--force`, or as a
-file rather than a folder); 2 the template is missing or has no
-`.platform`, `--out-dir` lies inside the template, `--model` is not an
-existing `*.SemanticModel` folder, or `--logical-id` is not a UUID. In
-every error case nothing is written. After copying, the command checks the
-copy (the dataset reference resolves, every page in `pages.json` has a
-valid `page.json`) and, when tmdl-preflight is installed, reports its B004
-findings for files inside the copy's own folder (a sibling report is never
-counted). Problems are printed; `--strict` turns them into exit 1.
+Exit codes: 0 on success or when the operator declines the overwrite
+prompt; 1 for a missing template, a missing required file or a failed
+template check; 2 when the target lies inside the template or when
+`--logical-id` is not a UUID.
 
 ## `pbip-forge f-filters`
 
