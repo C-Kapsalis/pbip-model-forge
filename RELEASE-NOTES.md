@@ -126,6 +126,11 @@ Where these commands deliberately differ from the scripts they replace:
 
 - Only the bare `i-Applied Filters` measure is written by the command; the
   other caption shapes are library functions.
+- Running the test suite no longer changes the repository. The suite runs
+  each test in its own temporary directory, and it fails the test if a
+  report folder appears in the repository root. Five report folders
+  (`Loose`, `Roastery`, `Shop`, `X`, `Z`) had been committed by an earlier
+  run and are removed; one of them carried a local temporary path.
 
 ## 1.1.0 (2026-10-12): Born compliant
 

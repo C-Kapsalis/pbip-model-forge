@@ -1,9 +1,0 @@
-{
-  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definitionProperties/2.0.0/schema.json",
-  "version": "4.0",
-  "datasetReference": {
-    "byPath": {
-      "path": "..//private/var/folders/fp/b19fbw2j41z9_lyxq1cyd88h0000gn/T/pytest-of-chkapsalis/pytest-693/test_absolute_missing_model_is0/clone/Nope.SemanticModel"
-    }
-  }
-}
