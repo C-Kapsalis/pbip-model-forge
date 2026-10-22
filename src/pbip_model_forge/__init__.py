@@ -9,7 +9,7 @@ Public API:
 """
 
 # Defined before the submodule imports: cli/handoff read it at import time.
-__version__ = "1.1.0"
+__version__ = "1.2.0"
 
 from .enter_data import (
     DUMMY_PARTITION_SOURCE,

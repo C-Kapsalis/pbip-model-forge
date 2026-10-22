@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-from ported_helpers import FIXTURES, copy_fixture, forge, load, tree
+from forge_helpers import FIXTURES, copy_fixture, forge, load, tree
 
 THEME_SRC = FIXTURES / "blank_report" / "themes" / "Roastery Light.json"
 HEX20 = re.compile(r"^[0-9a-f]{20}$")
@@ -196,5 +196,8 @@ def test_an_unexpected_error_fails_that_model_and_the_next_one_still_runs(client
     monkeypatch.setattr(report_scaffold, "write_full_blank_report", flaky)
     run = forge("report", "blank", "--client", client, "--model", "Coffee", "Tea", "--full")
     assert run.code == 1, run.text
-    assert "RuntimeError: disk said no" in run.out
+    # the original's line carries the exception's text; the traceback goes
+    # to standard error
+    assert "❌ Error creating report: disk said no" in run.out, run.out
+    assert "RuntimeError: disk said no" in run.err, run.err
     assert (client / "Tea.Report" / "definition" / "report.json").is_file()

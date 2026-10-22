@@ -31,10 +31,11 @@ table 'x-Selector 1'
 
 	partition 'x-Selector 1' = calculated
 		mode: import
-		source =
+		source = ```
 				{
 				    ("Store Revenue", NAMEOF('Sales Measures'[Store Revenue]), 0, "store_m"),
-				    ("Web Revenue", NAMEOF('Sales Measures'[Web Revenue]), 1, "web_m")
+				    ("Web Total", NAMEOF('Sales Measures'[Web Total]), 1, "web_m")
 				}
+				```
 
 	annotation PBI_Id = 0b1c2d3e4f

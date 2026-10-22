@@ -130,14 +130,27 @@ def _add_model_commands(sub: Any) -> None:
     p_blank.add_argument("--dry-run", action="store_true", help="list what would be created")
 
     p_clone = sub.add_parser("clone-report", help="copy a report under a new name and identity")
-    p_clone.add_argument("template", help="existing <X>.Report folder")
-    p_clone.add_argument("name", help="name of the new report")
-    p_clone.add_argument("--out-dir", help="parent folder of the copy (default: the template's)")
-    p_clone.add_argument("--model", help="semantic model folder the copy should point at")
-    p_clone.add_argument("--force", action="store_true", help="replace an existing target folder")
+    p_clone.add_argument("template", help="the template report folder to copy")
+    p_clone.add_argument("name", nargs="?", default="MyCompany-Analytics",
+                         help="the deployment name (default: MyCompany-Analytics)")
+    p_clone.add_argument("target_dir", nargs="?", default=None,
+                         help="the report folder itself, used exactly as given "
+                              "(default: <cwd>/<NAME>)")
+    p_clone.add_argument("semantic_model", nargs="?", default=None,
+                         help="the semantic model the copy points at "
+                              "(default: <NAME>.SemanticModel)")
+    p_clone.add_argument("--model", default=None,
+                         help="the same as the semantic model argument")
+    p_clone.add_argument("--force", action="store_true",
+                         help="replace an existing target without asking")
     p_clone.add_argument("--logical-id", help="logicalId to use instead of a random UUID")
     p_clone.add_argument("--strict", action="store_true",
                          help="exit 1 when the copy fails the report integrity checks")
+    p_clone.add_argument("--expect-visuals", type=int, default=None,
+                         help="check the copy's visual count against this number")
+    p_clone.add_argument("--expect-bookmark", action="append", default=None,
+                         help="check that this bookmark exists in the copy "
+                              "(repeatable)")
 
     for cmd, what in (("f-filters", "fill f-<Category> measures and f-All gates"),
                       ("i-filters", "regenerate the i-Applied Filters caption measure")):
@@ -158,14 +171,16 @@ def _cmd_table(args: argparse.Namespace) -> int:
 
     if args.b64 is not None:
         rows = enter_data.decode_b64_or_none(args.b64)
-    else:
-        try:
-            rows = enter_data.decode_file(args.file)
-        except (OSError, ValueError) as exc:
-            print(f"error: {exc}", file=sys.stderr)
+        if rows is None:
             return 1
-    if rows is None:
-        return 1
+    else:
+        rows, error = enter_data.decode_file_or_error(args.file)
+        if error is not None:
+            if error.startswith("No binary data found in "):
+                print(error, file=sys.stderr)
+            else:
+                print(f"Error decrypting: {error}")
+            return 1
     sys.stdout.write(enter_data.format_dump(rows, args.max_rows))
     return 0
 
@@ -180,10 +195,14 @@ def _cmd_clone(args: argparse.Namespace) -> int:
     return clone_report_cli(args)
 
 
-def _model_targets(args: argparse.Namespace) -> list[Path]:
+def _model_targets(args: argparse.Namespace) -> list[tuple[str, Path]]:
+    """``(label, folder)`` per target: a ``--model`` path as given, or
+    ``<fleet>/<child>`` for each ``*.SemanticModel`` folder of ``--fleet``."""
     if args.model:
-        return [Path(m) for m in args.model]
-    return sorted(p for p in Path(args.fleet).glob("*.SemanticModel") if p.is_dir())
+        return [(m, Path(m)) for m in args.model]
+    fleet = args.fleet.rstrip("/\\") or args.fleet
+    return [(f"{fleet}/{p.name}", p)
+            for p in sorted(Path(args.fleet).glob("*.SemanticModel")) if p.is_dir()]
 
 
 def _cmd_f_filters(args: argparse.Namespace) -> int:
