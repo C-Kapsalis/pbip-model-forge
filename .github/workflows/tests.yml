@@ -1,0 +1,31 @@
+name: tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    name: ${{ matrix.os }} / Python ${{ matrix.python-version }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python-version: ["3.9", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+      # The tmdl-preflight integration tests skip without it. tmdl-preflight
+      # needs Python 3.10+, so on the 3.9 leg those tests skip by design.
+      - name: Install tmdl-preflight
+        if: matrix.python-version != '3.9'
+        run: python -m pip install "tmdl-preflight @ git+https://github.com/C-Kapsalis/tmdl-preflight@v1.2.0"
+      - name: Test
+        run: python -m pytest -rfEs
