@@ -1,6 +1,71 @@
 # Release notes
 
-## Unreleased
+## 1.2.1 (2026-10-22)
+
+- **`build` writes a complete PBIR report.** The report next to a built
+  model was only `.platform` and `definition.pbir`, which tmdl-preflight
+  v1.2.0 rejects (`B007 Missing report.json`, `B005 definition/pages/pages.json
+  is missing`). It is now the structure `report blank` writes (report.json,
+  version.json, one empty page), with a deterministic `logicalId` and page
+  id, so rebuilds stay byte-identical. The committed `template/` is rebuilt.
+- BUGFIX: `report blank` writes `pages.json` with the pages metadata schema
+  1.1.0, the version tmdl-preflight B005 accepts (the original wrote 1.0.0).
+- BUGFIX: `report blank` no longer writes `.pbi/localSettings.json`. It is
+  user/machine state that Power BI Desktop writes itself and that belongs in
+  `.gitignore`; tmdl-preflight B007 warns about it. The original wrote it;
+  nothing reads it from a fresh report.
+- BUGFIX: `report blank` with a model that does not exist no longer prints
+  `✅ ALL REPORTS CREATED SUCCESSFULLY` and exits 0. When nothing was created
+  the footer reads `⚠️  NO REPORTS CREATED`; when some reports were created
+  it reads `⚠️  SOME REPORTS FAILED`. Either way the run exits 1. An
+  existing report is still a skip (exit 0).
+
+A built model and a fresh `report blank` report now pass tmdl-preflight
+v1.2.0 with 0 errors and 0 warnings.
+
+### Kept fixes (BUGFIX)
+
+Where these commands deliberately differ from the scripts they replace:
+
+- BUGFIX: f-filters looks for the gate chains only inside `f-All`.
+- BUGFIX: f-filters refuses a chain variable declared twice (no gate line
+  is written, a warning says why).
+- BUGFIX: f-filters writes gate lines only when both chains exist.
+- BUGFIX: f-filters adds terms before a trailing `//` or `--` line comment.
+- BUGFIX: f-filters escapes `"`, `]` and `'` in generated names.
+- BUGFIX: f-filters and i-filters keep line endings and BOM, and the backup
+  is a byte copy.
+- BUGFIX: i-filters does not rewrite or back up an unchanged file.
+- BUGFIX: i-filters escapes `'` (table names) and `"` (labels) in the
+  caption.
+- BUGFIX: an unexpected error in one model fails only that model in
+  f-filters; the other models still run.
+- BUGFIX: commented selector rows are ignored, and comments are stripped
+  before references are detected.
+- BUGFIX: the verbose f-filters line reads `Loading model index`, and the
+  warnings point at tmdl-preflight A005 for the f-measure shapes.
+- BUGFIX: `table dump` rejects a payload that is not a JSON array (the
+  original crashed on it).
+- BUGFIX: `clone-report` edits `.platform` and `definition.pbir` as JSON
+  values (the original's text replacement missed compact JSON and broke on
+  quotes in names).
+- BUGFIX: an empty decoded payload prints `No data` instead of an empty
+  listing.
+- BUGFIX: a target directory inside the template is refused (exit 2,
+  nothing written).
+- BUGFIX: `--logical-id` is validated as a UUID.
+
+### Notes
+
+- Only the bare `i-Applied Filters` measure is written by the command; the
+  other caption shapes are library functions.
+- Running the test suite no longer changes the repository. The suite runs
+  each test in its own temporary directory, and it fails the test if a
+  report folder appears in the repository root. Five report folders
+  (`Loose`, `Roastery`, `Shop`, `X`, `Z`) had been committed by an earlier
+  run and are removed; one of them carried a local temporary path.
+
+## 1.2.0 (2026-10-22)
 
 Commands for projects that already exist, next to the spec-based `check`
 and `build`. See [docs/model-commands.md](docs/model-commands.md).
@@ -89,71 +154,6 @@ and `build`. See [docs/model-commands.md](docs/model-commands.md).
 - Tests for all of the above (fictional fixtures). With tmdl-preflight
   installed (`uv run --group test pytest`) its integration tests run too;
   without it they skip.
-
-### Fixed after the v1.2.0 tag
-
-- **`build` writes a complete PBIR report.** The report next to a built
-  model was only `.platform` and `definition.pbir`, which tmdl-preflight
-  v1.2.0 rejects (`B007 Missing report.json`, `B005 definition/pages/pages.json
-  is missing`). It is now the structure `report blank` writes (report.json,
-  version.json, one empty page), with a deterministic `logicalId` and page
-  id, so rebuilds stay byte-identical. The committed `template/` is rebuilt.
-- BUGFIX: `report blank` writes `pages.json` with the pages metadata schema
-  1.1.0, the version tmdl-preflight B005 accepts (the original wrote 1.0.0).
-- BUGFIX: `report blank` no longer writes `.pbi/localSettings.json`. It is
-  user/machine state that Power BI Desktop writes itself and that belongs in
-  `.gitignore`; tmdl-preflight B007 warns about it. The original wrote it;
-  nothing reads it from a fresh report.
-- BUGFIX: `report blank` with a model that does not exist no longer prints
-  `✅ ALL REPORTS CREATED SUCCESSFULLY` and exits 0. When nothing was created
-  the footer reads `⚠️  NO REPORTS CREATED`; when some reports were created
-  it reads `⚠️  SOME REPORTS FAILED`. Either way the run exits 1. An
-  existing report is still a skip (exit 0).
-
-A built model and a fresh `report blank` report now pass tmdl-preflight
-v1.2.0 with 0 errors and 0 warnings.
-
-### Kept fixes (BUGFIX)
-
-Where these commands deliberately differ from the scripts they replace:
-
-- BUGFIX: f-filters looks for the gate chains only inside `f-All`.
-- BUGFIX: f-filters refuses a chain variable declared twice (no gate line
-  is written, a warning says why).
-- BUGFIX: f-filters writes gate lines only when both chains exist.
-- BUGFIX: f-filters adds terms before a trailing `//` or `--` line comment.
-- BUGFIX: f-filters escapes `"`, `]` and `'` in generated names.
-- BUGFIX: f-filters and i-filters keep line endings and BOM, and the backup
-  is a byte copy.
-- BUGFIX: i-filters does not rewrite or back up an unchanged file.
-- BUGFIX: i-filters escapes `'` (table names) and `"` (labels) in the
-  caption.
-- BUGFIX: an unexpected error in one model fails only that model in
-  f-filters; the other models still run.
-- BUGFIX: commented selector rows are ignored, and comments are stripped
-  before references are detected.
-- BUGFIX: the verbose f-filters line reads `Loading model index`, and the
-  warnings point at tmdl-preflight A005 for the f-measure shapes.
-- BUGFIX: `table dump` rejects a payload that is not a JSON array (the
-  original crashed on it).
-- BUGFIX: `clone-report` edits `.platform` and `definition.pbir` as JSON
-  values (the original's text replacement missed compact JSON and broke on
-  quotes in names).
-- BUGFIX: an empty decoded payload prints `No data` instead of an empty
-  listing.
-- BUGFIX: a target directory inside the template is refused (exit 2,
-  nothing written).
-- BUGFIX: `--logical-id` is validated as a UUID.
-
-### Notes
-
-- Only the bare `i-Applied Filters` measure is written by the command; the
-  other caption shapes are library functions.
-- Running the test suite no longer changes the repository. The suite runs
-  each test in its own temporary directory, and it fails the test if a
-  report folder appears in the repository root. Five report folders
-  (`Loose`, `Roastery`, `Shop`, `X`, `Z`) had been committed by an earlier
-  run and are removed; one of them carried a local temporary path.
 
 ## 1.1.0 (2026-10-12): Born compliant
 
