@@ -66,8 +66,9 @@ def test_committed_template_matches_a_fresh_build(tmp_path):
     committed = _tree(REPO / "template")
     assert fresh.keys() == committed.keys()
     for path, data in fresh.items():
-        # git may check text files out with CRLF on Windows
-        assert committed[path].replace(b"\r\n", b"\n") == data, path
+        # git may check text files out with CRLF on Windows, and the build
+        # writes text files with the platform's line ending
+        assert committed[path].replace(b"\r\n", b"\n") == data.replace(b"\r\n", b"\n"), path
 
 
 def test_ids_are_unique_and_stable(tmp_path):
