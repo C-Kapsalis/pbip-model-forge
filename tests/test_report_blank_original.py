@@ -45,7 +45,8 @@ def test_the_full_definition_is_the_default(client):
     assert (rep / "definition" / "report.json").is_file()
     assert (rep / "definition" / "version.json").is_file()
     assert (rep / "definition" / "pages" / "pages.json").is_file()
-    assert (rep / ".pbi" / "localSettings.json").is_file()
+    # BUGFIX (after 1.2.0): no .pbi/localSettings.json (user/machine state)
+    assert not (rep / ".pbi" / "localSettings.json").exists()
 
 
 def test_full_is_still_accepted(client):
@@ -63,8 +64,7 @@ def test_every_file_is_written_with_two_space_indent_and_no_newline(client):
     assert run.code == 0, run.text
     rep = client / "Coffee.Report"
     for rel in (".platform", "definition.pbir", "definition/report.json",
-                "definition/version.json", "definition/pages/pages.json",
-                ".pbi/localSettings.json"):
+                "definition/version.json", "definition/pages/pages.json"):
         text = (rep / rel).read_text(encoding="utf-8")
         assert text.startswith('{\n  "'), (rel, text[:40])
         assert not text.endswith("\n"), (rel, "the file ends with a newline")
@@ -78,8 +78,10 @@ def test_the_folders_exist(client):
     rep = client / "Coffee.Report"
     for d in ("definition/pages", "definition/bookmarks",
               "StaticResources/SharedResources/BaseThemes",
-              "StaticResources/RegisteredResources", ".pbi"):
+              "StaticResources/RegisteredResources"):
         assert (rep / d).is_dir(), d
+    # BUGFIX (after 1.2.0): no .pbi folder
+    assert not (rep / ".pbi").exists()
 
 
 def test_non_ascii_is_escaped(tmp_path):
@@ -141,9 +143,10 @@ def test_a_missing_client_folder_fails(client, tmp_path):
 
 
 def test_a_missing_model_is_a_skip(client):
-    """Item 33: a skip is not a failure."""
+    """Item 33: nothing is created for a missing model. BUGFIX (after
+    1.2.0): it is no longer a success; the run exits 1."""
     run = forge("report", "blank", "--client", client, "--model", "Tea")
-    assert run.code == 0, run.text
+    assert run.code == 1, run.text
     assert "Semantic model not found" in run.text, run.text
     assert not (client / "Tea.Report").exists()
 
@@ -209,7 +212,8 @@ def test_the_skip_blocks(client):
     (client / "Coffee.Report").mkdir()
     run = forge("report", "blank", "--client", client,
                 "--model", "Coffee", "Tea")
-    assert run.code == 0, run.text
+    # BUGFIX (after 1.2.0): the missing model Tea makes the run exit 1
+    assert run.code == 1, run.text
     assert "⚠️  Semantic model not found: " in run.text, run.text
     assert "   Skipping report creation for Tea" in run.text, run.text
     assert "ℹ️  Report already exists: Coffee" in run.text, run.text
