@@ -1,59 +1,39 @@
-"""Emit the BLANK report artifact.
+"""Emit the BLANK report artifact that ``build`` writes next to the model.
 
-The "spec, no visuals" deliverable is a report folder containing exactly two
-files and nothing else:
+The "spec, no visuals" deliverable is a complete PBIR report with one empty
+page, bound to the semantic model:
 
-    <name>.Report/.platform          (metadata.type == "Report")
-    <name>.Report/definition.pbir    (datasetReference.byPath -> ../<name>.SemanticModel)
+    <name>.Report/.platform                       (metadata.type == "Report")
+    <name>.Report/definition.pbir                 (byPath -> ../<model>.SemanticModel)
+    <name>.Report/definition/report.json
+    <name>.Report/definition/version.json
+    <name>.Report/definition/pages/pages.json     (pagesMetadata 1.1.0)
+    <name>.Report/definition/pages/<id>/page.json ("Page 1", 1280 x 720)
 
-No report.json, no pages, no StaticResources. Power BI Desktop opens it as an
-empty canvas bound to the semantic model -- exactly what a data-model spec needs.
+It is the same structure ``pbip-forge report blank`` writes (see
+:mod:`report_scaffold`). Up to 1.2.0 this module wrote only ``.platform`` and
+``definition.pbir``, which tmdl-preflight rejects (B005: no pages.json; B007:
+no report.json).
 """
 
 from __future__ import annotations
 
-import json
 import uuid
 from pathlib import Path
 
 
 def write_blank_report(out_dir: str | Path, name: str,
                        logical_id: str | None = None,
-                       model_name: str | None = None) -> Path:
+                       model_name: str | None = None,
+                       page_id: str | None = None) -> Path:
     """Write the blank report folder ``name`` under ``out_dir``.
 
     The report points at ``../<model_name>.SemanticModel`` (``model_name``
-    defaults to ``name``). ``logical_id`` defaults to a random UUID;
-    build_pbip passes a deterministic one so rebuilds are byte-identical.
-    ``pbip-forge report blank --full`` writes the complete PBIR form instead
-    (see :mod:`report_scaffold`)."""
-    out_dir = Path(out_dir)
-    report_dir = out_dir / f"{name}.Report"
-    report_dir.mkdir(parents=True, exist_ok=True)
+    defaults to ``name``). ``logical_id`` defaults to a random UUID and
+    ``page_id`` to a random 20-hex-character page name; build_pbip passes
+    deterministic ones so rebuilds are byte-identical."""
+    from .report_scaffold import new_page_id, write_full_blank_report
 
-    (report_dir / ".platform").write_text(
-        json.dumps(
-            {
-                "$schema": "https://developer.microsoft.com/json-schemas/fabric/gitIntegration/platformProperties/2.0.0/schema.json",
-                "metadata": {"type": "Report", "displayName": name},
-                "config": {"version": "2.0", "logicalId": logical_id or str(uuid.uuid4())},
-            },
-            indent=2,
-        ),
-        encoding="utf-8",
-    )
-
-    (report_dir / "definition.pbir").write_text(
-        json.dumps(
-            {
-                "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definitionProperties/2.0.0/schema.json",
-                "version": "4.0",
-                "datasetReference": {
-                    "byPath": {"path": f"../{model_name or name}.SemanticModel"}
-                },
-            },
-            indent=2,
-        ),
-        encoding="utf-8",
-    )
-    return report_dir
+    return write_full_blank_report(out_dir, name, model_name or name,
+                                   logical_id=logical_id or str(uuid.uuid4()),
+                                   page_id=page_id or new_page_id())

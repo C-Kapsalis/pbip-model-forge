@@ -154,7 +154,7 @@ pbip-model-forge/
 ├─ template/                     ← the seed PBIP (built by scripts/build_template.py, passes tmdl-preflight)
 │  ├─ Model.pbip
 │  ├─ Model.SemanticModel/…      ← 3 data tables + calculated __Calendar + Key Measures + 4 relationships
-│  ├─ Model.Report/              ← BLANK report: .platform + definition.pbir only
+│  ├─ Model.Report/              ← BLANK report: complete PBIR definition, one empty page
 │  └─ handoff/                   ← manifest.json + SPEC.md generated from the spec
 ├─ src/pbip_model_forge/
 │  ├─ enter_data.py              ← compressed entered-data encoder (byte-exact) + M source builders
@@ -181,8 +181,10 @@ see [Documentation](#documentation) below.
 
 ## The deliverable is a spec, not a report
 
-The generated `.Report` is intentionally **blank** (just `.platform` +
-`definition.pbir`, no pages, no visuals). The value is the **model**: tables,
+The generated `.Report` is intentionally **blank**: a complete PBIR
+definition (`report.json`, `version.json`, one empty page listed in
+`pages.json`) with no visuals, the same structure `pbip-forge report blank`
+writes. The value is the **model**: tables,
 types, relationships, and measures: the thing a data engineer needs. Every
 build also writes a hand-off pack next to the PBIP:
 

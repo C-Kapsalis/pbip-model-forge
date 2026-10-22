@@ -3,9 +3,9 @@
 Three pieces live here:
 
 * :func:`write_full_blank_report` writes a complete PBIR report definition
-  (``report.json``, ``version.json``, one page, ``.pbi/localSettings.json``)
-  bound to a semantic model that already exists. The minimal two-file form
-  used by ``build`` stays in :mod:`blank_report`.
+  (``report.json``, ``version.json``, one page listed in ``pages.json``)
+  bound to a semantic model. ``report blank`` and ``build`` (through
+  :func:`blank_report.write_blank_report`) both write this form.
 * :func:`clone_report` copies a finished report folder, gives the copy a new
   ``logicalId`` and display name, and optionally points it at another model.
 * :func:`check_report` is a small structural check of a report folder (the
@@ -27,16 +27,14 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from .blank_report import write_blank_report
-
 _SCHEMA = "https://developer.microsoft.com/json-schemas/fabric"
 PLATFORM_SCHEMA = f"{_SCHEMA}/gitIntegration/platformProperties/2.0.0/schema.json"
 PBIR_SCHEMA = f"{_SCHEMA}/item/report/definitionProperties/2.0.0/schema.json"
 REPORT_SCHEMA = f"{_SCHEMA}/item/report/definition/report/3.1.0/schema.json"
 VERSION_SCHEMA = f"{_SCHEMA}/item/report/definition/versionMetadata/1.0.0/schema.json"
-PAGES_SCHEMA = f"{_SCHEMA}/item/report/definition/pagesMetadata/1.0.0/schema.json"
+#: tmdl-preflight B005 accepts the 1.1.0 pages metadata (the original wrote 1.0.0).
+PAGES_SCHEMA = f"{_SCHEMA}/item/report/definition/pagesMetadata/1.1.0/schema.json"
 PAGE_SCHEMA = f"{_SCHEMA}/item/report/definition/page/2.0.0/schema.json"
-LOCAL_SCHEMA = f"{_SCHEMA}/item/report/localSettings/1.0.0/schema.json"
 
 #: Built-in Power BI base theme referenced by new reports (December 2025 release).
 DEFAULT_THEME = "CY25SU12"
@@ -46,8 +44,10 @@ _SUBDIRS = (
     "definition/bookmarks",
     "StaticResources/SharedResources/BaseThemes",
     "StaticResources/RegisteredResources",
-    ".pbi",
 )
+# No `.pbi` folder: `.pbi/localSettings.json` is user/machine state that Power
+# BI Desktop writes itself and that belongs in .gitignore (tmdl-preflight
+# B007 warns when a report carries it). The original wrote it; BUGFIX.
 
 
 def _dump(obj: Any, indent: int | str = 2) -> str:
@@ -114,7 +114,6 @@ def full_report_files(report_name: str, model_name: str, theme: str,
         "definition/version.json": _dump({"$schema": VERSION_SCHEMA, "version": "2.0.0"}),
         "definition/pages/pages.json": _dump(pages),
         "definition/pages/" + page_id + "/page.json": _dump(page),
-        ".pbi/localSettings.json": _dump({"$schema": LOCAL_SCHEMA}),
     }
 
 
@@ -166,7 +165,8 @@ def blank_reports_cli(args: argparse.Namespace) -> int:
     """``pbip-forge report blank``: the original's output, byte for byte.
 
     The full PBIR definition is the default; there is no minimal mode in
-    this command (``build`` keeps its own two-file report).
+    this command. Exit 1 when a report failed or a model was not found
+    (nothing is created for it), else 0; an existing report is a skip.
     """
     client = Path(args.client)
     if not client.is_dir():
@@ -180,7 +180,9 @@ def blank_reports_cli(args: argparse.Namespace) -> int:
     print("CREATE BLANK REPORTS")
     print(_rule())
     print()
-    success = True
+    failed = False
+    missing = False
+    created = 0
     for model in args.model:
         report_name = args.name or model
         model_dir = client / f"{model}.SemanticModel"
@@ -189,6 +191,7 @@ def blank_reports_cli(args: argparse.Namespace) -> int:
             print(f"⚠️  Semantic model not found: {model_dir}")
             print(f"   Skipping report creation for {model}")
             print()
+            missing = True
             continue
         if report_dir.exists():
             print(f"ℹ️  Report already exists: {report_name}")
@@ -207,6 +210,7 @@ def blank_reports_cli(args: argparse.Namespace) -> int:
                         "StaticResources/"):
                 print(f"    - {report_dir}/{rel}")
             print()
+            created += 1
             continue
         theme_src = (Path(args.theme_file) if args.theme_file
                      else _sibling_theme(client, theme))
@@ -217,16 +221,24 @@ def blank_reports_cli(args: argparse.Namespace) -> int:
             print(f"❌ Error creating report: {exc}")
             import traceback
             traceback.print_exc()
-            success = False
+            failed = True
             continue
         print(f"✅ Created blank report: {report_name}")
         print(f"   Location: {report_dir}")
         print()
+        created += 1
+    # BUGFIX: a model that does not exist is not a success. The original
+    # printed the success footer and exited 0 even when nothing was created.
+    if not failed and not missing:
+        footer = "✅ ALL REPORTS CREATED SUCCESSFULLY"
+    elif not failed and not created:
+        footer = "⚠️  NO REPORTS CREATED"
+    else:
+        footer = "⚠️  SOME REPORTS FAILED"
     print(_rule())
-    print("✅ ALL REPORTS CREATED SUCCESSFULLY" if success
-          else "⚠️  SOME REPORTS FAILED")
+    print(footer)
     print(_rule())
-    return 0 if success else 1
+    return 1 if (failed or missing) else 0
 
 
 # ---------------------------------------------------------------------------

@@ -12,7 +12,7 @@ artifact set the will-it-open playbook requires:
         definition/model.tmdl
         definition/relationships.tmdl
         definition/tables/*.tmdl
-    <name>.Report/            (blank: .platform + definition.pbir only)
+    <name>.Report/            (blank PBIR report: report.json, version.json, one empty page)
     handoff/                  (manifest.json + SPEC.md, see handoff.py)
 
 Everything is parametric and deterministic: every lineageTag, relationship
@@ -425,9 +425,11 @@ def build_pbip(spec: dict[str, Any], out_dir: str | Path, *,
         encoding="utf-8",
     )
 
-    # Blank report
+    # Blank report: a complete PBIR report with one empty page
     write_blank_report(out_dir, name,
-                       logical_id=stable_id(name, "", "platform", "Report"))
+                       logical_id=stable_id(name, "", "platform", "Report"),
+                       page_id=stable_id(name, "", "page", "Page 1")
+                       .replace("-", "")[:20])
 
     # .pbip
     pbip_path = out_dir / f"{name}.pbip"

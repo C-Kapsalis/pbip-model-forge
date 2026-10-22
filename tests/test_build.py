@@ -229,3 +229,56 @@ def test_examples_pass_tmdl_preflight(tmp_path, script):
                          capture_output=True, text=True)
     assert run.returncode == 0, run.stdout + run.stderr
     assert "0 error(s)" in run.stdout
+
+
+# -- the report stub is a complete PBIR report (BUGFIX, after 1.2.0) ---------
+PAGES_SCHEMA_1_1 = ("https://developer.microsoft.com/json-schemas/fabric/item/report/"
+                    "definition/pagesMetadata/1.1.0/schema.json")
+
+
+def test_build_writes_a_complete_pbir_report(tmp_path):
+    """build writes the same report structure as `report blank`: report.json,
+    version.json and one page listed in pages.json (pagesMetadata 1.1.0),
+    and no user-specific .pbi/localSettings.json."""
+    spec = good_spec()
+    build_pbip(spec, tmp_path)
+    rep = tmp_path / "Tiny.Report"
+    files = set(_tree(rep))
+    for rel in (".platform", "definition.pbir", "definition/report.json",
+                "definition/version.json", "definition/pages/pages.json"):
+        assert rel in files, (rel, sorted(files))
+    assert not (rep / ".pbi" / "localSettings.json").exists()
+    pages = json.loads((rep / "definition/pages/pages.json").read_text(encoding="utf-8"))
+    assert pages["$schema"] == PAGES_SCHEMA_1_1
+    assert len(pages["pageOrder"]) == 1
+    page_id = pages["pageOrder"][0]
+    assert re.fullmatch(r"[0-9a-f]{20}", page_id)
+    assert pages["activePageName"] == page_id
+    page = json.loads((rep / "definition/pages" / page_id / "page.json")
+                      .read_text(encoding="utf-8"))
+    assert (page["name"], page["displayName"]) == (page_id, "Page 1")
+    pbir = json.loads((rep / "definition.pbir").read_text(encoding="utf-8"))
+    assert pbir["datasetReference"]["byPath"]["path"] == "../Tiny.SemanticModel"
+    platform = json.loads((rep / ".platform").read_text(encoding="utf-8"))
+    assert platform["config"]["logicalId"] == stable_id("Tiny", "", "platform", "Report")
+
+
+def test_build_report_page_id_is_deterministic(tmp_path):
+    build_pbip(good_spec(), tmp_path / "a")
+    build_pbip(good_spec(), tmp_path / "b")
+    a = _tree(tmp_path / "a" / "Tiny.Report")
+    assert a == _tree(tmp_path / "b" / "Tiny.Report")
+
+
+def test_built_model_has_no_preflight_errors_or_warnings(tmp_path):
+    """tmdl-preflight (in-process module, when installed) reports 0 errors and
+    0 warnings for a built model, report folder included (B005, B007)."""
+    pytest.importorskip("tmdl_preflight")
+    build_pbip(good_spec(), tmp_path)
+    proc = subprocess.run(
+        [sys.executable, "-m", "tmdl_preflight.cli", "check", str(tmp_path), "--json"],
+        capture_output=True, text=True)
+    payload = json.loads(proc.stdout)
+    bad = [v for v in payload["violations"] if v.get("severity") in ("error", "warning")]
+    assert bad == [], bad
+    assert payload["summary"]["errors"] == 0 and payload["summary"]["warnings"] == 0

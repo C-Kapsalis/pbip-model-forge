@@ -22,13 +22,13 @@ and `build`. See [docs/model-commands.md](docs/model-commands.md).
   unchanged.
 - **`pbip-forge report blank --client DIR --model NAME...`** creates
   a report bound to an existing model. The command writes the complete
-  PBIR definition (report.json, version.json, one page, localSettings) that
+  PBIR definition (report.json, version.json, one page) that
   Fabric Git sync and deployment pipelines need; `--full` is still accepted
   and has no further effect. Every file is written with two-space
   indentation, a space after the keys and no trailing newline, and
   non-ASCII characters are escaped. Existing reports are never overwritten;
-  a missing model is skipped and a missing client folder fails. The console
-  output is the original's: a banner, one block per model, and a footer
+  a missing model is skipped and fails the run, and a missing client
+  folder fails. The console output is the original's: a banner, one block per model, and a footer
   that says whether every report was created. `--theme`/`--theme-file` set
   and copy the base theme (default name `CY25SU12`, the December 2025
   built-in theme). An error of any kind while writing one report is
@@ -89,6 +89,29 @@ and `build`. See [docs/model-commands.md](docs/model-commands.md).
 - Tests for all of the above (fictional fixtures). With tmdl-preflight
   installed (`uv run --group test pytest`) its integration tests run too;
   without it they skip.
+
+### Fixed after the v1.2.0 tag
+
+- **`build` writes a complete PBIR report.** The report next to a built
+  model was only `.platform` and `definition.pbir`, which tmdl-preflight
+  v1.2.0 rejects (`B007 Missing report.json`, `B005 definition/pages/pages.json
+  is missing`). It is now the structure `report blank` writes (report.json,
+  version.json, one empty page), with a deterministic `logicalId` and page
+  id, so rebuilds stay byte-identical. The committed `template/` is rebuilt.
+- BUGFIX: `report blank` writes `pages.json` with the pages metadata schema
+  1.1.0, the version tmdl-preflight B005 accepts (the original wrote 1.0.0).
+- BUGFIX: `report blank` no longer writes `.pbi/localSettings.json`. It is
+  user/machine state that Power BI Desktop writes itself and that belongs in
+  `.gitignore`; tmdl-preflight B007 warns about it. The original wrote it;
+  nothing reads it from a fresh report.
+- BUGFIX: `report blank` with a model that does not exist no longer prints
+  `✅ ALL REPORTS CREATED SUCCESSFULLY` and exits 0. When nothing was created
+  the footer reads `⚠️  NO REPORTS CREATED`; when some reports were created
+  it reads `⚠️  SOME REPORTS FAILED`. Either way the run exits 1. An
+  existing report is still a skip (exit 0).
+
+A built model and a fresh `report blank` report now pass tmdl-preflight
+v1.2.0 with 0 errors and 0 warnings.
 
 ### Kept fixes (BUGFIX)
 

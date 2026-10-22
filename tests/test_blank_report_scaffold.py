@@ -36,8 +36,10 @@ def test_case1_full_report_files(client):
     rep = client / "Coffee.Report"
     for d in ("definition/pages", "definition/bookmarks",
               "StaticResources/SharedResources/BaseThemes",
-              "StaticResources/RegisteredResources", ".pbi"):
+              "StaticResources/RegisteredResources"):
         assert (rep / d).is_dir(), d
+    # BUGFIX (after 1.2.0): no .pbi/localSettings.json (user/machine state)
+    assert not (rep / ".pbi").exists()
 
     platform = load(rep / ".platform")
     assert platform["$schema"].endswith("platformProperties/2.0.0/schema.json")
@@ -71,11 +73,10 @@ def test_case1_full_report_files(client):
     version = load(rep / "definition" / "version.json")
     assert version["$schema"].endswith("versionMetadata/1.0.0/schema.json")
     assert version["version"] == "2.0.0"
-    local = load(rep / ".pbi" / "localSettings.json")
-    assert list(local) == ["$schema"] and local["$schema"].endswith("localSettings/1.0.0/schema.json")
 
     pages = load(rep / "definition" / "pages" / "pages.json")
-    assert pages["$schema"].endswith("pagesMetadata/1.0.0/schema.json")
+    # BUGFIX (after 1.2.0): 1.1.0, the version tmdl-preflight B005 accepts
+    assert pages["$schema"].endswith("pagesMetadata/1.1.0/schema.json")
     assert len(pages["pageOrder"]) == 1
     page_id = pages["pageOrder"][0]
     assert HEX20.match(page_id)
@@ -101,9 +102,11 @@ def test_case2_existing_report_is_skipped_untouched(client):
     assert tree(client) == before
 
 
-def test_case3_missing_model_is_a_warning_not_a_failure(client):
+def test_case3_missing_model_creates_nothing_and_fails(client):
+    # BUGFIX (after 1.2.0): was exit 0 with the success footer
     run = forge("report", "blank", "--client", client, "--model", "Tea", "--full")
-    assert run.code == 0, run.text
+    assert run.code == 1, run.text
+    assert "NO REPORTS CREATED" in run.text
     assert "Tea" in run.text
     assert not (client / "Tea.Report").exists()
 

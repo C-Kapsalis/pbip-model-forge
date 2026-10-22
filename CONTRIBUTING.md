@@ -63,7 +63,7 @@ src/pbip_model_forge/
                     by the builder, the checker and the hand-off pack
   check.py          pbip-forge check: the FM rule catalog and the checker
   handoff.py        handoff/manifest.json + handoff/SPEC.md
-  blank_report.py   the blank "spec, no visuals" report (.platform + definition.pbir)
+  blank_report.py   the blank "spec, no visuals" report (complete PBIR, one empty page)
   cli.py            pbip-forge (check, build, rules) and pbip-forge-template
 scripts/                    worked-example specs: template, hospital, vet clinic, physio
 template/                   the seed PBIP (generated; passes both gates)

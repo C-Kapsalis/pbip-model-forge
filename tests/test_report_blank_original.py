@@ -45,7 +45,8 @@ def test_the_full_definition_is_the_default(client):
     assert (rep / "definition" / "report.json").is_file()
     assert (rep / "definition" / "version.json").is_file()
     assert (rep / "definition" / "pages" / "pages.json").is_file()
-    assert (rep / ".pbi" / "localSettings.json").is_file()
+    # BUGFIX (after 1.2.0): no .pbi/localSettings.json (user/machine state)
+    assert not (rep / ".pbi" / "localSettings.json").exists()
 
 
 def test_full_is_still_accepted(client):
@@ -63,8 +64,7 @@ def test_every_file_is_written_with_two_space_indent_and_no_newline(client):
     assert run.code == 0, run.text
     rep = client / "Coffee.Report"
     for rel in (".platform", "definition.pbir", "definition/report.json",
-                "definition/version.json", "definition/pages/pages.json",
-                ".pbi/localSettings.json"):
+                "definition/version.json", "definition/pages/pages.json"):
         text = (rep / rel).read_text(encoding="utf-8")
         assert text.startswith('{\n  "'), (rel, text[:40])
         assert not text.endswith("\n"), (rel, "the file ends with a newline")
@@ -78,8 +78,10 @@ def test_the_folders_exist(client):
     rep = client / "Coffee.Report"
     for d in ("definition/pages", "definition/bookmarks",
               "StaticResources/SharedResources/BaseThemes",
-              "StaticResources/RegisteredResources", ".pbi"):
+              "StaticResources/RegisteredResources"):
         assert (rep / d).is_dir(), d
+    # BUGFIX (after 1.2.0): no .pbi folder
+    assert not (rep / ".pbi").exists()
 
 
 def test_non_ascii_is_escaped(tmp_path):
@@ -141,9 +143,10 @@ def test_a_missing_client_folder_fails(client, tmp_path):
 
 
 def test_a_missing_model_is_a_skip(client):
-    """Item 33: a skip is not a failure."""
+    """Item 33: nothing is created for a missing model. BUGFIX (after
+    1.2.0): it is no longer a success; the run exits 1."""
     run = forge("report", "blank", "--client", client, "--model", "Tea")
-    assert run.code == 0, run.text
+    assert run.code == 1, run.text
     assert "Semantic model not found" in run.text, run.text
     assert not (client / "Tea.Report").exists()
 
@@ -209,7 +212,8 @@ def test_the_skip_blocks(client):
     (client / "Coffee.Report").mkdir()
     run = forge("report", "blank", "--client", client,
                 "--model", "Coffee", "Tea")
-    assert run.code == 0, run.text
+    # BUGFIX (after 1.2.0): the missing model Tea makes the run exit 1
+    assert run.code == 1, run.text
     assert "⚠️  Semantic model not found: " in run.text, run.text
     assert "   Skipping report creation for Tea" in run.text, run.text
     assert "ℹ️  Report already exists: Coffee" in run.text, run.text
@@ -222,3 +226,60 @@ def test_the_old_lines_are_gone(client):
     for gone in ("created ", "skip: ", "warning: ", "would create",
                  "integrity:", "note: no theme file copied"):
         assert gone not in run.text, (gone, run.text)
+
+
+# ── kept fixes after 1.2.0 (BUGFIX) ──────────────────────────────────────
+
+PAGES_SCHEMA_1_1 = ("https://developer.microsoft.com/json-schemas/fabric/item/report/"
+                    "definition/pagesMetadata/1.1.0/schema.json")
+
+
+def test_pages_json_declares_the_1_1_0_schema(client):
+    """BUGFIX: tmdl-preflight B005 accepts pagesMetadata 1.1.0, not 1.0.0."""
+    run = _blank(client)
+    assert run.code == 0, run.text
+    pages = load(client / "Coffee.Report" / "definition" / "pages" / "pages.json")
+    assert pages["$schema"] == PAGES_SCHEMA_1_1
+
+
+def test_no_local_settings_are_written(client):
+    """BUGFIX: .pbi/localSettings.json is user/machine state (B007 warning)."""
+    run = _blank(client)
+    assert run.code == 0, run.text
+    assert not (client / "Coffee.Report" / ".pbi").exists()
+
+
+def test_only_missing_models_create_nothing_and_fail(tmp_path):
+    """BUGFIX: a client with no model must not claim success."""
+    client = tmp_path / "empty"
+    client.mkdir()
+    run = forge("report", "blank", "--client", client, "--model", "Nope")
+    assert run.code == 1, run.text
+    lines = run.out.splitlines()
+    assert lines[-2] == "⚠️  NO REPORTS CREATED", lines[-3:]
+    assert "ALL REPORTS CREATED SUCCESSFULLY" not in run.text
+    assert list(client.iterdir()) == []
+
+
+def test_a_missing_model_next_to_a_created_one_fails(client):
+    """BUGFIX: one created report does not make a missing model a success."""
+    run = forge("report", "blank", "--client", client, "--model", "Coffee", "Tea")
+    assert run.code == 1, run.text
+    assert (client / "Coffee.Report" / "definition" / "report.json").is_file()
+    assert run.out.splitlines()[-2] == "⚠️  SOME REPORTS FAILED", run.out
+
+
+def test_report_blank_has_no_preflight_errors_or_warnings(client):
+    """A fresh blank report passes tmdl-preflight with 0 errors, 0 warnings."""
+    pytest.importorskip("tmdl_preflight")
+    import subprocess
+    import sys
+    assert _blank(client).code == 0
+    proc = subprocess.run(
+        [sys.executable, "-m", "tmdl_preflight.cli", "check", str(client), "--json"],
+        capture_output=True, text=True)
+    payload = json.loads(proc.stdout)
+    report_findings = [v for v in payload["violations"]
+                       if v.get("severity") in ("error", "warning")
+                       and v.get("rule", "").startswith("B")]
+    assert report_findings == [], report_findings

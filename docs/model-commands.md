@@ -48,25 +48,32 @@ Creates `<DIR>/<REPORT>.Report` bound to `<DIR>/<NAME>.SemanticModel`. It
 writes a complete PBIR definition, which Fabric Git integration and
 deployment pipelines need: `definition/report.json`,
 `definition/version.json`, one page (`Page 1`, 1280 x 720) listed in
-`definition/pages/pages.json`, `.pbi/localSettings.json`, and the
-`bookmarks` and `StaticResources` folders. `--full` is accepted and has no
-further effect; `build` keeps its own two-file report.
+`definition/pages/pages.json` (pages metadata schema 1.1.0, the version
+tmdl-preflight B005 accepts), and the `bookmarks` and `StaticResources`
+folders. It does not write `.pbi/localSettings.json`: that file is
+user/machine state Power BI Desktop writes itself, and it belongs in
+`.gitignore` (tmdl-preflight B007 warns about it). `--full` is accepted and
+has no further effect. `build` writes the same structure, with a
+deterministic `logicalId` and page id.
 
 Every file is written with two-space indentation, a space after the keys and
 no trailing newline, and non-ASCII characters are escaped.
 
-- A model folder that does not exist is skipped.
+- A model folder that does not exist is skipped: nothing is created for
+  it, and the run exits 1.
 - An existing report folder is never overwritten.
 - `--theme` names the base theme (default `CY25SU12`). The theme JSON is
   copied from `--theme-file`, or else from another report of the same client
   that ships it; when neither exists, report.json still names the theme and
   Power BI falls back to its default.
 - The `logicalId` and page id are random, so two runs differ only there.
-- Exit 0 unless writing a report failed; a missing `--client` folder exits 1.
-  An error while writing one report (of any kind) is printed, marks that
-  report failed and the remaining models are still processed.
+- Exit 0 when every model got its report (or already had one); exit 1 when
+  writing a report failed, a model was not found, or the `--client` folder
+  is missing. An error while writing one report (of any kind) is printed,
+  marks that report failed and the remaining models are still processed.
 - The console output is the original's: a banner, one block per model, and a
-  footer that says whether every report was created.
+  footer: `✅ ALL REPORTS CREATED SUCCESSFULLY`, `⚠️  NO REPORTS CREATED`
+  (only missing models, nothing created) or `⚠️  SOME REPORTS FAILED`.
 
 ## `pbip-forge clone-report`
 
