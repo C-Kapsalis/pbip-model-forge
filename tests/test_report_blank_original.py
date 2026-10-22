@@ -222,3 +222,60 @@ def test_the_old_lines_are_gone(client):
     for gone in ("created ", "skip: ", "warning: ", "would create",
                  "integrity:", "note: no theme file copied"):
         assert gone not in run.text, (gone, run.text)
+
+
+# ── kept fixes after 1.2.0 (BUGFIX) ──────────────────────────────────────
+
+PAGES_SCHEMA_1_1 = ("https://developer.microsoft.com/json-schemas/fabric/item/report/"
+                    "definition/pagesMetadata/1.1.0/schema.json")
+
+
+def test_pages_json_declares_the_1_1_0_schema(client):
+    """BUGFIX: tmdl-preflight B005 accepts pagesMetadata 1.1.0, not 1.0.0."""
+    run = _blank(client)
+    assert run.code == 0, run.text
+    pages = load(client / "Coffee.Report" / "definition" / "pages" / "pages.json")
+    assert pages["$schema"] == PAGES_SCHEMA_1_1
+
+
+def test_no_local_settings_are_written(client):
+    """BUGFIX: .pbi/localSettings.json is user/machine state (B007 warning)."""
+    run = _blank(client)
+    assert run.code == 0, run.text
+    assert not (client / "Coffee.Report" / ".pbi").exists()
+
+
+def test_only_missing_models_create_nothing_and_fail(tmp_path):
+    """BUGFIX: a client with no model must not claim success."""
+    client = tmp_path / "empty"
+    client.mkdir()
+    run = forge("report", "blank", "--client", client, "--model", "Nope")
+    assert run.code == 1, run.text
+    lines = run.out.splitlines()
+    assert lines[-2] == "⚠️  NO REPORTS CREATED", lines[-3:]
+    assert "ALL REPORTS CREATED SUCCESSFULLY" not in run.text
+    assert list(client.iterdir()) == []
+
+
+def test_a_missing_model_next_to_a_created_one_fails(client):
+    """BUGFIX: one created report does not make a missing model a success."""
+    run = forge("report", "blank", "--client", client, "--model", "Coffee", "Tea")
+    assert run.code == 1, run.text
+    assert (client / "Coffee.Report" / "definition" / "report.json").is_file()
+    assert run.out.splitlines()[-2] == "⚠️  SOME REPORTS FAILED", run.out
+
+
+def test_report_blank_has_no_preflight_errors_or_warnings(client):
+    """A fresh blank report passes tmdl-preflight with 0 errors, 0 warnings."""
+    pytest.importorskip("tmdl_preflight")
+    import subprocess
+    import sys
+    assert _blank(client).code == 0
+    proc = subprocess.run(
+        [sys.executable, "-m", "tmdl_preflight.cli", "check", str(client), "--json"],
+        capture_output=True, text=True)
+    payload = json.loads(proc.stdout)
+    report_findings = [v for v in payload["violations"]
+                       if v.get("severity") in ("error", "warning")
+                       and v.get("rule", "").startswith("B")]
+    assert report_findings == [], report_findings
